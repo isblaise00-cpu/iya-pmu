@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(tsx?|css\\)$\")",
+      "Bash(npm install *)",
+      "Bash(npx prisma *)",
+      "Bash(npx tsx *)",
+      "Bash(powershell -c \"\\(Get-Process -Id 25396\\).StartInfo.EnvironmentVariables | Out-String\")",
+      "Bash(powershell -c \"Get-Process -Id 25396 | Select-Object Id, StartTime, Path | Format-List\")",
+      "PowerShell($proc = Get-WmiObject Win32_Process -Filter \"ProcessId = 25396\"; $proc.GetOwner\\(\\) | Out-Null; $proc | Format-List CommandLine, ExecutablePath)"
+    ]
+  }
+}

@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Plan {
+  id           Int          @id @default(autoincrement())
+  name         String
+  price        Float
+  durationDays Int
+  description  String?
+  isActive     Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  subscribers  Subscriber[]
+  payments     Payment[]
+
+  @@map("plans")
+}
+
+model Subscriber {
+  id        Int              @id @default(autoincrement())
+  phone     String           @unique
+  name      String
+  status    SubscriberStatus @default(ACTIVE)
+  planId    Int
+  plan      Plan             @relation(fields: [planId], references: [id])
+  startDate DateTime         @default(now())
+  endDate   DateTime
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  smsLogs   SmsLog[]
+  payments  Payment[]
+
+  @@map("subscribers")
+}
+
+enum SubscriberStatus {
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+model Race {
+  id            Int        @id @default(autoincrement())
+  date          DateTime   @unique @db.Date
+  raceType      RaceType
+  discipline    Discipline
+  raceName      String
+  hippodrome    String
+  country       String     @default("FR")
+  distance      Int
+  numHorses     Int
+  startTime     DateTime?
+  allocationXof Int?
+  pdfUrl        String?
+  pdfFetchedAt  DateTime?
+  rawPdfText    String?    @db.Text
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  horses    Horse[]
+  pronostic Pronostic?
+
+  @@map("races")
+}
+
+enum RaceType {
+  TIERCE
+  QUARTE
+  QUARTE_PLUS
+  QUINTE_PLUS
+  COUPLE
+  AUTRE
+}
+
+enum Discipline {
+  TROT_ATTELE
+  TROT_MONTE
+  PLAT
+  OBSTACLE
+  AUTRE
+}
+
+model Horse {
+  id            Int     @id @default(autoincrement())
+  raceId        Int
+  race          Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
+  number        Int
+  name          String
+  driver        String?
+  trainer       String?
+  owner         String?
+  sex           String?
+  age           Int?
+  distance      Int?
+  chrono        String?
+  recentPerf    String?
+  gainsXof      Int?
+  oddsParisTurf String?
+  oddsTierceMag String?
+  externalData  Json?
+
+  @@unique([raceId, number])
+  @@map("horses")
+}
+
+model Pronostic {
+  id              Int      @id @default(autoincrement())
+  date            DateTime @default(now())
+  baseHorse       String?
+  tierce          Json?
+  quarte          Json?
+  quinte          Json?
+  outsider        String?
+  confidenceScore Int      @default(0)
+  commentary      String?
+  rawData         Json?
+  isSent          Boolean  @default(false)
+  modifiedByAdmin Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  raceId          Int?     @unique
+  race            Race?    @relation(fields: [raceId], references: [id])
+  proposals       Json?
+  sourcesPdf      Json?
+  result          Result?
+
+  @@map("pronostics")
+}
+
+model Result {
+  id           Int        @id @default(autoincrement())
+  date         DateTime   @default(now())
+  arrivalOrder Json
+  source       String?
+  pronosticId  Int?       @unique
+  pronostic    Pronostic? @relation(fields: [pronosticId], references: [id])
+  createdAt    DateTime   @default(now())
+
+  @@map("results")
+}
+
+model SmsCampaign {
+  id        Int            @id @default(autoincrement())
+  name      String
+  message   String
+  status    CampaignStatus @default(DRAFT)
+  target    String         @default("all")
+  sentAt    DateTime?
+  createdAt DateTime       @default(now())
+  logs      SmsLog[]
+
+  @@map("sms_campaigns")
+}
+
+enum CampaignStatus {
+  DRAFT
+  SENT
+  FAILED
+}
+
+model SmsLog {
+  id           Int          @id @default(autoincrement())
+  subscriberId Int?
+  subscriber   Subscriber?  @relation(fields: [subscriberId], references: [id])
+  message      String
+  status       SmsLogStatus @default(PENDING)
+  campaignId   Int?
+  campaign     SmsCampaign? @relation(fields: [campaignId], references: [id])
+  sentAt       DateTime     @default(now())
+  errorMessage String?
+
+  @@map("sms_logs")
+}
+
+enum SmsLogStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(ADMIN)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  VIEWER
+}
+
+model Payment {
+  id           Int        @id @default(autoincrement())
+  subscriberId Int
+  subscriber   Subscriber @relation(fields: [subscriberId], references: [id])
+  amount       Float
+  planId       Int
+  plan         Plan       @relation(fields: [planId], references: [id])
+  note         String?
+  paymentDate  DateTime   @default(now())
+  createdAt    DateTime   @default(now())
+
+  @@map("payments")
+}
