@@ -45,87 +45,32 @@ enum SubscriberStatus {
 }
 
 model Race {
-  id            Int        @id @default(autoincrement())
-  date          DateTime   @unique @db.Date
-  raceType      RaceType
-  discipline    Discipline
-  raceName      String
-  hippodrome    String
-  country       String     @default("FR")
-  distance      Int
-  numHorses     Int
-  startTime     DateTime?
-  allocationXof Int?
-  pdfUrl        String?
-  pdfFetchedAt  DateTime?
-  rawPdfText    String?    @db.Text
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
-
-  horses    Horse[]
-  pronostic Pronostic?
+  id         Int        @id @default(autoincrement())
+  date       DateTime   @unique @db.Date
+  raceType   String?
+  raceName   String?
+  hippodrome String?
+  distance   Int?
+  numHorses  Int?
+  startTime  String?
+  pdfUrl     String?    @db.VarChar(500)
+  createdAt  DateTime   @default(now())
+  pronostic  Pronostic?
 
   @@map("races")
-}
-
-enum RaceType {
-  TIERCE
-  QUARTE
-  QUARTE_PLUS
-  QUINTE_PLUS
-  COUPLE
-  AUTRE
-}
-
-enum Discipline {
-  TROT_ATTELE
-  TROT_MONTE
-  PLAT
-  OBSTACLE
-  AUTRE
-}
-
-model Horse {
-  id            Int     @id @default(autoincrement())
-  raceId        Int
-  race          Race    @relation(fields: [raceId], references: [id], onDelete: Cascade)
-  number        Int
-  name          String
-  driver        String?
-  trainer       String?
-  owner         String?
-  sex           String?
-  age           Int?
-  distance      Int?
-  chrono        String?
-  recentPerf    String?
-  gainsXof      Int?
-  oddsParisTurf String?
-  oddsTierceMag String?
-  externalData  Json?
-
-  @@unique([raceId, number])
-  @@map("horses")
 }
 
 model Pronostic {
   id              Int      @id @default(autoincrement())
   date            DateTime @default(now())
-  baseHorse       String?
-  tierce          Json?
-  quarte          Json?
-  quinte          Json?
-  outsider        String?
-  confidenceScore Int      @default(0)
-  commentary      String?
-  rawData         Json?
+  horses          Json?
+  proposals       Json?
+  commentary      String?  @db.Text
   isSent          Boolean  @default(false)
   modifiedByAdmin Boolean  @default(false)
   createdAt       DateTime @default(now())
   raceId          Int?     @unique
   race            Race?    @relation(fields: [raceId], references: [id])
-  proposals       Json?
-  sourcesPdf      Json?
   result          Result?
 
   @@map("pronostics")
@@ -134,7 +79,7 @@ model Pronostic {
 model Result {
   id           Int        @id @default(autoincrement())
   date         DateTime   @default(now())
-  arrivalOrder Json
+  arrivalOrder Json?
   source       String?
   pronosticId  Int?       @unique
   pronostic    Pronostic? @relation(fields: [pronosticId], references: [id])

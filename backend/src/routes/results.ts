@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
+import axios from 'axios';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
-import axios from 'axios';
+import { env } from '../lib/env';
 
 const router = Router();
 
@@ -9,7 +10,7 @@ router.get('/', async (_req: Request, res: Response) => {
   try {
     const results = await prisma.result.findMany({
       orderBy: { date: 'desc' },
-      include: { pronostic: true },
+      include: { pronostic: { include: { race: true } } },
     });
     res.json(results);
   } catch (err) {
@@ -20,12 +21,18 @@ router.get('/', async (_req: Request, res: Response) => {
 
 router.post('/fetch', async (_req: Request, res: Response) => {
   try {
-    const aiUrl = process.env.AI_ENGINE_URL || 'http://ai-engine:8000';
-    const response = await axios.post(`${aiUrl}/fetch-results`);
-    res.json({ message: 'Results fetch triggered', data: response.data });
+    const response = await axios.post(
+      `${env.AI_ENGINE_URL}/results/fetch`,
+      {},
+      { timeout: 120_000 },
+    );
+    res.json(response.data);
   } catch (err: any) {
+    if (err.response?.status === 404) {
+      return res.status(404).json({ error: err.response.data?.detail || 'Résultats non disponibles' });
+    }
     logger.error('POST /results/fetch error:', err);
-    res.status(500).json({ error: 'Failed to trigger results fetch', detail: err.message });
+    res.status(502).json({ error: 'Impossible de récupérer les résultats', detail: err.message });
   }
 });
 

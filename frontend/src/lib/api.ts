@@ -20,7 +20,6 @@ export const clearStoredToken = () => {
   delete api.defaults.headers.common['Authorization'];
 };
 
-// Restore token on module load
 const _t = getStoredToken();
 if (_t) api.defaults.headers.common['Authorization'] = `Bearer ${_t}`;
 
@@ -40,10 +39,9 @@ api.interceptors.response.use(
 // Pronostics
 export const getPronostics = () => api.get('/pronostics').then((r) => r.data);
 export const getTodayRace = () => api.get('/pronostics/today').then((r) => r.data);
-export const getPronostic = (id: number) => api.get(`/pronostics/${id}`).then((r) => r.data);
 export const updatePronostic = (id: number, data: any) => api.put(`/pronostics/${id}`, data).then((r) => r.data);
-export const triggerScraping = () => api.post('/pronostics/trigger').then((r) => r.data);
-export const startScrapingPipeline = () => api.post('/pronostics/scrape/start').then((r) => r.data as { jobId: string });
+export const startScrapingPipeline = (force = false) =>
+  api.post(`/pronostics/scrape/start${force ? '?force=true' : ''}`).then((r) => r.data as { jobId: string });
 export const getScrapingJob = (jobId: string) => api.get(`/pronostics/scrape/job/${jobId}`).then((r) => r.data);
 export const sendPronostic = (id: number) => api.post(`/pronostics/${id}/send`).then((r) => r.data);
 

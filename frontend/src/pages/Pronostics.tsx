@@ -2,24 +2,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import {
-  Play, Send, Edit3, MapPin, Trophy, Clock, ChevronDown, ChevronUp,
-  Shield, Gem, Target, Star, FileDown, ExternalLink, CheckCircle2, XCircle,
-} from 'lucide-react';
+import { Play, Send, MapPin, Trophy, FileDown, ChevronDown, ChevronUp, Clock, Flag } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import {
-  getPronostics, getTodayRace, sendPronostic, updatePronostic,
-  startScrapingPipeline, getScrapingJob,
-} from '../lib/api';
-import { formatXOF } from '../lib/format';
+import { getTodayRace, getPronostics, sendPronostic, startScrapingPipeline, getScrapingJob, fetchResults } from '../lib/api';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
 
 type Job = {
   id: string;
-  status: 'pending' | 'running' | 'done' | 'cached' | 'error';
+  status: 'pending' | 'running' | 'finished' | 'error';
   step: string;
   progress: number;
   message: string;
@@ -27,13 +20,22 @@ type Job = {
   error?: string | null;
 };
 
-type StrategyKey = 'SECURITE' | 'VALEUR' | 'AUDACE' | 'RECOMMANDE';
-const STRATEGY_META: Record<StrategyKey, { label: string; icon: any; color: string }> = {
-  SECURITE: { label: 'Sécurité', icon: Shield, color: '#10B981' },
-  VALEUR: { label: 'Valeur', icon: Gem, color: '#3B82F6' },
-  AUDACE: { label: 'Audace', icon: Target, color: '#F97316' },
-  RECOMMANDE: { label: 'Recommandé', icon: Star, color: 'var(--yellow)' },
+type Horse = { num: number; nom: string; cote_pt: string; cote_tm: string };
+
+type Proposal = {
+  id: string;
+  title: string;
+  subtitle: string;
+  nums: number[];
+  confidence: number;
+  odds: Record<string, string>;
 };
+
+function confidenceColor(c: number): string {
+  if (c >= 70) return '#10B981';
+  if (c >= 50) return '#F59E0B';
+  return '#6B7280';
+}
 
 function ScrapingProgressModal({ open, jobId, onDone, onClose }:
   { open: boolean; jobId: string | null; onDone: () => void; onClose: () => void }) {
@@ -46,13 +48,11 @@ function ScrapingProgressModal({ open, jobId, onDone, onClose }:
       try {
         const j = await getScrapingJob(jobId);
         setJob(j);
-        if (j.status === 'done' || j.status === 'cached' || j.status === 'error') {
+        if (['finished', 'error'].includes(j.status)) {
           if (intervalRef.current) window.clearInterval(intervalRef.current);
           if (j.status !== 'error') setTimeout(() => onDone(), 800);
         }
-      } catch (err) {
-        // network blip — keep polling
-      }
+      } catch { /* network blip */ }
     };
     tick();
     intervalRef.current = window.setInterval(tick, 1500);
@@ -60,7 +60,7 @@ function ScrapingProgressModal({ open, jobId, onDone, onClose }:
   }, [open, jobId, onDone]);
 
   if (!open) return null;
-  const pct = Math.round(((job?.progress) ?? 0) * 100);
+  const pct = job?.progress ?? 0;
 
   return (
     <Modal open={open} onClose={onClose} title="Pipeline en cours" size="md">
@@ -80,108 +80,102 @@ function ScrapingProgressModal({ open, jobId, onDone, onClose }:
             />
           </div>
         </div>
-
         {job?.status === 'error' && (
           <div className="card p-3 text-sm" style={{ background: '#fee2e2', color: '#991b1b', borderColor: '#fecaca' }}>
             <p className="font-medium mb-1">Erreur durant le pipeline</p>
             <p className="text-xs">{job.error}</p>
           </div>
         )}
-
-        {job?.status === 'cached' && (
+        {job?.result?.cached && (
           <div className="card p-3 text-sm" style={{ background: 'var(--yellow-dim)', borderColor: 'var(--yellow)' }}>
-            Un pronostic existe déjà pour aujourd'hui — affichage du résultat existant.
+            Un pronostic existe déjà pour aujourd'hui.
           </div>
         )}
-
-        <div className="flex justify-end gap-2 pt-2">
-          {(job?.status === 'error') && (
+        {job?.status === 'error' && (
+          <div className="flex justify-end">
             <Button variant="secondary" onClick={onClose}>Fermer</Button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </Modal>
   );
 }
 
-function ProposalCard({ proposal, horses }: { proposal: any; horses: any[] }) {
-  const meta = STRATEGY_META[proposal.strategy as StrategyKey] || STRATEGY_META.RECOMMANDE;
-  const Icon = meta.icon;
-  const horseName = (n: number) => horses.find((h) => h.number === n)?.name || `N°${n}`;
-  const isReco = proposal.strategy === 'RECOMMANDE';
+function ProposalCard({ proposal, horses, featured = false }:
+  { proposal: Proposal; horses: Horse[]; featured?: boolean }) {
+  const color = confidenceColor(proposal.confidence);
+  const horseName = (n: number) => horses.find((h) => h.num === n)?.nom || '';
 
   return (
     <div
-      className="card p-4 flex flex-col"
+      className="card p-4 flex flex-col gap-3"
       style={{
-        borderColor: isReco ? meta.color : 'var(--border)',
-        background: isReco ? 'var(--yellow-dim)' : 'var(--bg-surface)',
+        borderColor: featured ? color : 'var(--border)',
+        background: featured ? `${color}12` : 'var(--bg-surface)',
       }}
     >
-      <div className="flex items-center gap-2 mb-2">
-        <Icon size={14} style={{ color: meta.color }} />
-        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: meta.color }}>
-          {meta.label}
-        </span>
-        <span className="ml-auto text-xs font-bold tabular-nums" style={{ color: 'var(--text-muted)' }}>
-          {proposal.confidence}/100
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color }}>
+            {proposal.title}
+          </p>
+          <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            {proposal.subtitle}
+          </p>
+        </div>
+        <span
+          className="text-xs font-bold tabular-nums shrink-0 px-2 py-0.5 rounded-full"
+          style={{ background: `${color}22`, color }}
+        >
+          {proposal.confidence}%
         </span>
       </div>
-      <div className="space-y-1.5 mb-3">
-        {proposal.selections.map((n: number, i: number) => (
-          <div key={n} className="flex items-baseline gap-2 text-sm">
-            <span className="font-bold tabular-nums w-6 text-right" style={{ color: meta.color }}>
+
+      <div className="space-y-1.5">
+        {proposal.nums.map((n, i) => (
+          <div key={n} className="flex items-center gap-2 text-sm">
+            <span className="font-bold tabular-nums w-4 shrink-0 text-right" style={{ color }}>
               {i + 1}.
             </span>
-            <span className="font-semibold" style={{ color: 'var(--text)' }}>N°{n}</span>
-            <span className="truncate" style={{ color: 'var(--text-muted)' }}>{horseName(n)}</span>
+            <span className="font-bold tabular-nums w-6 shrink-0" style={{ color: 'var(--text)' }}>
+              {n}
+            </span>
+            <span className="flex-1 truncate text-xs" style={{ color: 'var(--text-muted)' }}>
+              {horseName(n)}
+            </span>
+            <span className="text-[11px] tabular-nums shrink-0 font-mono" style={{ color: 'var(--text-faint)' }}>
+              {proposal.odds[String(n)] || '—'}
+            </span>
           </div>
         ))}
       </div>
-      <div className="text-[11px] mt-auto" style={{ color: 'var(--text-muted)' }}>
-        <span className="font-medium">Base:</span> N°{proposal.base}
-        {proposal.outsider != null && (
-          <span className="ml-3"><span className="font-medium">Outsider:</span> N°{proposal.outsider}</span>
-        )}
-      </div>
-      <p className="text-xs mt-2 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-        {proposal.reasoning}
-      </p>
     </div>
   );
 }
 
 function RaceHeader({ race }: { race: any }) {
-  const TYPE_LABEL: Record<string, string> = {
-    TIERCE: 'Tiercé', QUARTE: 'Quarté', QUARTE_PLUS: 'Quarté+', QUINTE_PLUS: 'Quinté+',
-    COUPLE: 'Couplé', AUTRE: 'Course',
-  };
-  const DISC_LABEL: Record<string, string> = {
-    TROT_ATTELE: 'Trot Attelé', TROT_MONTE: 'Trot Monté', PLAT: 'Plat', OBSTACLE: 'Obstacle', AUTRE: 'Course',
-  };
   return (
     <div className="card p-5" style={{ background: 'var(--yellow-dim)', borderColor: 'var(--yellow)' }}>
       <div className="flex items-center justify-between mb-2">
         <span className="text-[11px] uppercase tracking-wide font-bold" style={{ color: 'var(--yellow-text)' }}>
-          {TYPE_LABEL[race.raceType] ?? race.raceType} · {DISC_LABEL[race.discipline] ?? race.discipline}
+          {race.raceType || 'Course'} · PMUB
         </span>
         <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
           {format(new Date(race.date), 'EEEE d MMMM yyyy', { locale: fr })}
         </span>
       </div>
       <h2 className="text-2xl font-bold mb-1 leading-tight" style={{ color: 'var(--text)' }}>
-        {race.raceName}
+        {race.raceName || 'Programme du jour'}
       </h2>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-        <span className="flex items-center gap-1"><MapPin size={12} /> {race.hippodrome}</span>
-        <span>{race.distance.toLocaleString('fr-FR')} m</span>
-        <span>{race.numHorses} partants</span>
-        {race.allocationXof != null && (
-          <span className="flex items-center gap-1"><Trophy size={12} /> {formatXOF(race.allocationXof)}</span>
+        {race.hippodrome && (
+          <span className="flex items-center gap-1"><MapPin size={12} /> {race.hippodrome}</span>
         )}
+        {race.distance && <span>{race.distance.toLocaleString('fr-FR')} m</span>}
+        {race.numHorses && <span>{race.numHorses} partants</span>}
         {race.startTime && (
-          <span className="flex items-center gap-1">
-            <Clock size={12} /> Départ {format(new Date(race.startTime), 'HH:mm')}
+          <span className="flex items-center gap-1 font-medium" style={{ color: 'var(--yellow-text)' }}>
+            <Clock size={12} /> Départ {race.startTime}
           </span>
         )}
         {race.pdfUrl && (
@@ -195,16 +189,104 @@ function RaceHeader({ race }: { race: any }) {
   );
 }
 
-function HorsesTable({ horses, favoris, outsiders, bigOutsiders }:
-  { horses: any[]; favoris?: number[]; outsiders?: number[]; bigOutsiders?: number[] }) {
-  const inSet = (n: number, s?: number[]) => Array.isArray(s) && s.includes(n);
+function ResultsSection({ result, horses, proposals, onFetch, isFetching }: {
+  result: any | null;
+  horses: Horse[];
+  proposals: Proposal[];
+  onFetch: () => void;
+  isFetching: boolean;
+}) {
+  const pronoDuJour = proposals.find((p) => p.id === 'prono_du_jour');
+  const predictedSet = new Set<number>(pronoDuJour?.nums || []);
+  const arrival: number[] = result?.arrivalOrder || [];
+  const horseName = (n: number) => horses.find((h) => h.num === n)?.nom || '';
+  const hits = arrival.filter((n) => predictedSet.has(n)).length;
+
   return (
     <div className="card overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3"
+        style={{ borderBottom: result ? '1px solid var(--border)' : undefined }}>
+        <div className="flex items-center gap-2">
+          <Flag size={14} style={{ color: result ? '#10B981' : 'var(--text-faint)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+            Arrivée officielle
+          </span>
+          {result && (
+            <span
+              className="text-[11px] font-bold px-2 py-0.5 rounded-full tabular-nums"
+              style={{
+                background: hits === arrival.length ? '#10B98120' : '#F59E0B20',
+                color: hits === arrival.length ? '#10B981' : '#F59E0B',
+              }}
+            >
+              {hits}/{arrival.length} pronostiqués
+            </span>
+          )}
+        </div>
+        {!result && (
+          <Button icon={<Flag size={13} />} variant="secondary" loading={isFetching} onClick={onFetch}>
+            Récupérer les résultats
+          </Button>
+        )}
+      </div>
+
+      {result ? (
+        <div className="p-4 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {arrival.map((n, i) => {
+              const hit = predictedSet.has(n);
+              return (
+                <div
+                  key={n}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg"
+                  style={{
+                    background: hit ? '#10B98115' : 'var(--bg-hover)',
+                    border: `1px solid ${hit ? '#10B981' : 'var(--border)'}`,
+                  }}
+                >
+                  <span className="text-[10px] font-medium tabular-nums w-4 text-right shrink-0"
+                    style={{ color: 'var(--text-faint)' }}>{i + 1}.</span>
+                  <span className="text-base font-bold tabular-nums" style={{ color: 'var(--text)' }}>{n}</span>
+                  {horseName(n) && (
+                    <span className="text-[11px] max-w-[100px] truncate" style={{ color: 'var(--text-muted)' }}>
+                      {horseName(n)}
+                    </span>
+                  )}
+                  {hit && <span className="text-[10px] font-bold" style={{ color: '#10B981' }}>✓</span>}
+                </div>
+              );
+            })}
+          </div>
+          {result.source && (
+            <p className="text-[10px]" style={{ color: 'var(--text-faint)' }}>
+              Source : {result.source}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="px-4 py-3">
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            Les résultats PMUB seront disponibles après la course. Cliquez sur le bouton pour les récupérer depuis LONAB.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HorsesTable({ horses }: { horses: Horse[] }) {
+  return (
+    <div className="card overflow-hidden">
+      <div className="px-4 py-2.5" style={{ borderBottom: '1px solid var(--border)' }}>
+        <span className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+          Partants · {horses.length} chevaux
+        </span>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-hover)' }}>
-              {['N°', 'Cheval', 'Driver', 'Entraîneur', 'S/Âge', 'Perf', 'Gains', 'P.Turf', 'Tiercé Mag.'].map((h) => (
+              {['N°', 'Cheval', 'Cote Paris Turf', 'Cote Tiercé Mag'].map((h) => (
                 <th key={h} className="px-3 py-2 text-left font-semibold uppercase tracking-wide"
                   style={{ color: 'var(--text-muted)', fontSize: 10 }}>{h}</th>
               ))}
@@ -212,32 +294,11 @@ function HorsesTable({ horses, favoris, outsiders, bigOutsiders }:
           </thead>
           <tbody>
             {horses.map((h) => (
-              <tr key={h.id} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td className="px-3 py-2 font-bold tabular-nums">
-                  <span style={{ color: inSet(h.number, favoris) ? 'var(--yellow-text)' : 'var(--text)' }}>
-                    {h.number}
-                  </span>
-                  {inSet(h.number, favoris) && <span className="ml-1" style={{ color: 'var(--yellow)' }}>★</span>}
-                  {(inSet(h.number, outsiders) || inSet(h.number, bigOutsiders)) && (
-                    <span className="ml-1 text-[9px]" style={{ color: '#F97316' }}>
-                      {inSet(h.number, bigOutsiders) ? 'GO' : 'O'}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-2 font-medium" style={{ color: 'var(--text)' }}>{h.name}</td>
-                <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{h.driver || '—'}</td>
-                <td className="px-3 py-2" style={{ color: 'var(--text-muted)' }}>{h.trainer || '—'}</td>
-                <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                  {h.sex || ''}{h.age ? `.${h.age}` : ''}
-                </td>
-                <td className="px-3 py-2 tabular-nums font-mono" style={{ color: 'var(--text-muted)', fontSize: 10 }}>
-                  {h.recentPerf || '—'}
-                </td>
-                <td className="px-3 py-2 tabular-nums text-right" style={{ color: 'var(--text-muted)' }}>
-                  {h.gainsXof != null ? formatXOF(h.gainsXof) : '—'}
-                </td>
-                <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>{h.oddsParisTurf || '—'}</td>
-                <td className="px-3 py-2 tabular-nums" style={{ color: 'var(--text-muted)' }}>{h.oddsTierceMag || '—'}</td>
+              <tr key={h.num} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td className="px-3 py-2 font-bold tabular-nums" style={{ color: 'var(--text)' }}>{h.num}</td>
+                <td className="px-3 py-2 font-medium" style={{ color: 'var(--text)' }}>{h.nom}</td>
+                <td className="px-3 py-2 tabular-nums font-mono" style={{ color: 'var(--text-muted)' }}>{h.cote_pt || '—'}</td>
+                <td className="px-3 py-2 tabular-nums font-mono" style={{ color: 'var(--text-muted)' }}>{h.cote_tm || '—'}</td>
               </tr>
             ))}
           </tbody>
@@ -247,170 +308,24 @@ function HorsesTable({ horses, favoris, outsiders, bigOutsiders }:
   );
 }
 
-function SourcesPanel({ pronostic }: { pronostic: any }) {
-  const sourcesPdf = pronostic?.sourcesPdf as Record<string, number[]> | null;
-  const externalSources = pronostic?.rawData?.external?.sources as Array<{ name: string; ok: boolean; url: string; matched: number[] }> | undefined;
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-      <div className="card p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>
-          Pronostics du PDF (6 publications)
-        </h3>
-        {!sourcesPdf || Object.keys(sourcesPdf).length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--text-faint)' }}>—</p>
-        ) : (
-          <div className="space-y-1.5">
-            {Object.entries(sourcesPdf).map(([name, nums]) => (
-              <div key={name} className="flex items-baseline gap-2 text-xs">
-                <span className="font-medium w-32 shrink-0" style={{ color: 'var(--text)' }}>{name}</span>
-                <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                  {(nums as number[]).join(' - ')}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="card p-4">
-        <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>
-          Sites externes consultés
-        </h3>
-        {!externalSources || externalSources.length === 0 ? (
-          <p className="text-xs" style={{ color: 'var(--text-faint)' }}>—</p>
-        ) : (
-          <div className="space-y-1.5">
-            {externalSources.map((s) => (
-              <div key={s.name} className="flex items-center gap-2 text-xs">
-                {s.ok
-                  ? <CheckCircle2 size={12} style={{ color: '#10B981' }} />
-                  : <XCircle size={12} style={{ color: '#EF4444' }} />
-                }
-                <a href={s.url} target="_blank" rel="noreferrer"
-                  className="font-medium hover:underline flex items-center gap-1"
-                  style={{ color: 'var(--text)' }}>
-                  {s.name} <ExternalLink size={10} style={{ color: 'var(--text-faint)' }} />
-                </a>
-                <span className="ml-auto" style={{ color: 'var(--text-faint)' }}>
-                  {s.ok ? `${s.matched.length} cheval(aux) trouvé(s)` : 'indisponible'}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ClassementsPanel({ pronostic }: { pronostic: any }) {
-  const parsed = pronostic?.rawData?.parsed;
-  if (!parsed) return null;
-  const apt = parsed.aptitudes || {};
-  const sections = [
-    { label: 'Forme', items: apt.forme, color: '#10B981' },
-    { label: 'Classe', items: apt.classe, color: '#3B82F6' },
-    { label: 'Progrès', items: apt.progres, color: '#8B5CF6' },
-    { label: 'Régularité', items: apt.regularite, color: 'var(--yellow-text)' },
-    { label: 'Outsiders', items: parsed.outsiders, color: '#F97316' },
-    { label: 'Gros Outsiders', items: parsed.bigOutsiders, color: '#EF4444' },
-  ];
-  return (
-    <div className="card p-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide mb-3" style={{ color: 'var(--text-muted)' }}>
-        Classements & aptitudes
-      </h3>
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-        {sections.map(({ label, items, color }) => (
-          items && items.length > 0 && (
-            <div key={label}>
-              <p className="text-[11px] font-semibold mb-1" style={{ color }}>{label}</p>
-              <p className="text-xs tabular-nums" style={{ color: 'var(--text)' }}>
-                {(items as number[]).join(' - ')}
-              </p>
-            </div>
-          )
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function EditModal({ pronostic, onClose }: { pronostic: any; onClose: () => void }) {
-  const qc = useQueryClient();
-  const [form, setForm] = useState({
-    baseHorse: pronostic.baseHorse || '',
-    tierce: (Array.isArray(pronostic.tierce) ? pronostic.tierce : []).join(', '),
-    quarte: (Array.isArray(pronostic.quarte) ? pronostic.quarte : []).join(', '),
-    quinte: (Array.isArray(pronostic.quinte) ? pronostic.quinte : []).join(', '),
-    outsider: pronostic.outsider || '',
-    confidenceScore: pronostic.confidenceScore || 0,
-    commentary: pronostic.commentary || '',
-  });
-
-  const mutation = useMutation({
-    mutationFn: () => updatePronostic(pronostic.id, {
-      ...form,
-      tierce: form.tierce.split(',').map((s: string) => s.trim()).filter(Boolean),
-      quarte: form.quarte.split(',').map((s: string) => s.trim()).filter(Boolean),
-      quinte: form.quinte.split(',').map((s: string) => s.trim()).filter(Boolean),
-      confidenceScore: Number(form.confidenceScore),
-    }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['pronostics'] });
-      qc.invalidateQueries({ queryKey: ['todayRace'] });
-      toast.success('Pronostic modifié');
-      onClose();
-    },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  return (
-    <div className="space-y-3">
-      {[
-        ['Cheval de base', 'baseHorse', ''],
-        ['Tiercé', 'tierce', 'Ex: N°3, N°7, N°11'],
-        ['Quarté', 'quarte', 'Ex: N°3, N°7, N°11, N°5'],
-        ['Quinté', 'quinte', 'Ex: N°3, N°7, N°11, N°5, N°14'],
-        ['Outsider', 'outsider', ''],
-        ['Score de confiance (0-100)', 'confidenceScore', ''],
-      ].map(([label, key, hint]) => (
-        <div key={key}>
-          <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>{label}</label>
-          <input
-            type={key === 'confidenceScore' ? 'number' : 'text'}
-            value={(form as any)[key]}
-            onChange={(e) => setForm({ ...form, [key]: e.target.value })}
-            className="input"
-          />
-          {hint && <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>{hint}</p>}
-        </div>
-      ))}
-      <div>
-        <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>Commentaire</label>
-        <textarea value={form.commentary}
-          onChange={(e) => setForm({ ...form, commentary: e.target.value })}
-          rows={4} className="input resize-none" />
-      </div>
-      <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={onClose}>Annuler</Button>
-        <Button loading={mutation.isPending} onClick={() => mutation.mutate()}>Sauvegarder</Button>
-      </div>
-    </div>
-  );
-}
-
 export default function Pronostics() {
   const qc = useQueryClient();
   const [scrapingJob, setScrapingJob] = useState<string | null>(null);
-  const [editTarget, setEditTarget] = useState<any>(null);
   const [historyExpanded, setHistoryExpanded] = useState<number | null>(null);
 
-  const { data: today, isLoading: todayLoading } = useQuery({ queryKey: ['todayRace'], queryFn: getTodayRace });
+  const { data: today, isLoading: todayLoading } = useQuery({
+    queryKey: ['todayRace'],
+    queryFn: getTodayRace,
+    // Auto-refresh toutes les 30s si on a un pronostic sans résultats (poller actif)
+    refetchInterval: (query) => {
+      const pronostic = (query.state.data as any)?.pronostic;
+      return pronostic && !pronostic.result ? 30_000 : false;
+    },
+  });
   const { data: history = [], isLoading: historyLoading } = useQuery({ queryKey: ['pronostics'], queryFn: getPronostics });
 
   const startMutation = useMutation({
-    mutationFn: startScrapingPipeline,
+    mutationFn: (force: boolean) => startScrapingPipeline(force),
     onSuccess: (data) => setScrapingJob(data.jobId),
     onError: (e: any) => toast.error(e.message),
   });
@@ -425,6 +340,16 @@ export default function Pronostics() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const resultsMutation = useMutation({
+    mutationFn: fetchResults,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['todayRace'] });
+      qc.invalidateQueries({ queryKey: ['pronostics'] });
+      toast.success('Arrivée récupérée avec succès');
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const onPipelineDone = () => {
     setScrapingJob(null);
     qc.invalidateQueries({ queryKey: ['todayRace'] });
@@ -433,8 +358,10 @@ export default function Pronostics() {
   };
 
   const race = today?.race;
-  const pronostic = today?.pronostic || race?.pronostic;
-  const proposals = (pronostic?.proposals as any[] | null | undefined) || [];
+  const pronostic = today?.pronostic;
+  const horses: Horse[] = (pronostic?.horses as Horse[]) || [];
+  const proposals: Proposal[] = (pronostic?.proposals as Proposal[]) || [];
+  const [featured, ...rest] = proposals;
 
   return (
     <div className="space-y-5">
@@ -442,9 +369,7 @@ export default function Pronostics() {
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-xl font-bold" style={{ color: 'var(--text)' }}>Pronostics du jour</h1>
-          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Source officielle : LONAB Burkina Faso
-          </p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Source officielle : LONAB Burkina Faso</p>
         </div>
         <div className="flex gap-2">
           {pronostic && !pronostic.isSent && (
@@ -457,18 +382,18 @@ export default function Pronostics() {
             variant={race ? 'secondary' : 'primary'}
             icon={<Play size={14} />}
             loading={startMutation.isPending}
-            onClick={() => startMutation.mutate()}
+            onClick={() => startMutation.mutate(!!race)}
           >
             {race ? 'Régénérer' : 'Lancer le pipeline'}
           </Button>
         </div>
       </div>
 
-      {/* Today's race */}
+      {/* Course du jour */}
       {todayLoading ? (
         <div className="space-y-3">
           <div className="skeleton h-24 w-full" />
-          <div className="skeleton h-40 w-full" />
+          <div className="skeleton h-64 w-full" />
         </div>
       ) : !race ? (
         <div className="card p-12 text-center">
@@ -477,113 +402,169 @@ export default function Pronostics() {
             Aucun pronostic pour aujourd'hui
           </p>
           <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            Cliquez sur « Lancer le pipeline » pour télécharger le programme officiel LONAB,
-            recouper les sources et générer les propositions IA.
+            Cliquez sur « Lancer le pipeline » pour télécharger le programme officiel LONAB et générer les 10 pronostics.
           </p>
         </div>
       ) : (
         <>
           <RaceHeader race={race} />
 
-          {/* Proposals */}
-          {proposals.length > 0 && (
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
-              {proposals.map((p: any) => (
-                <ProposalCard key={p.strategy} proposal={p} horses={race.horses || []} />
+          {/* Prono du jour — mis en avant */}
+          {featured && (
+            <ProposalCard proposal={featured} horses={horses} featured />
+          )}
+
+          {/* 9 autres pronostics en grille */}
+          {rest.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {rest.map((p) => (
+                <ProposalCard key={p.id} proposal={p} horses={horses} />
               ))}
             </div>
           )}
 
-          {/* Global commentary */}
+          {/* Analyse globale */}
           {pronostic?.commentary && (
             <div className="card p-4">
               <h3 className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>
-                Synthèse de l'IA
+                Analyse
               </h3>
-              <p className="text-sm leading-relaxed whitespace-pre-line" style={{ color: 'var(--text)' }}>
+              <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
                 {pronostic.commentary}
               </p>
-              <div className="flex items-center gap-2 mt-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                <span>Confiance globale: <span className="font-bold" style={{ color: 'var(--yellow-text)' }}>{pronostic.confidenceScore}/100</span></span>
+              <div className="flex items-center gap-3 mt-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                 {pronostic.modifiedByAdmin && <Badge status="PENDING" />}
                 {pronostic.isSent && <Badge status="SENT" />}
-                <button className="ml-auto inline-flex items-center gap-1 hover:underline"
-                  onClick={() => setEditTarget(pronostic)}>
-                  <Edit3 size={11} /> Ajuster
-                </button>
               </div>
             </div>
           )}
 
-          {/* Horses table */}
-          {race.horses && race.horses.length > 0 && (
-            <HorsesTable
-              horses={race.horses}
-              favoris={(pronostic?.rawData?.parsed?.favoris) || []}
-              outsiders={(pronostic?.rawData?.parsed?.outsiders) || []}
-              bigOutsiders={(pronostic?.rawData?.parsed?.bigOutsiders) || []}
-            />
-          )}
+          {/* Arrivée officielle */}
+          <ResultsSection
+            result={(pronostic as any)?.result ?? null}
+            horses={horses}
+            proposals={proposals}
+            onFetch={() => resultsMutation.mutate()}
+            isFetching={resultsMutation.isPending}
+          />
 
-          {/* Sources */}
-          {pronostic && <SourcesPanel pronostic={pronostic} />}
-          {pronostic && <ClassementsPanel pronostic={pronostic} />}
+          {/* Tableau des partants */}
+          {horses.length > 0 && <HorsesTable horses={horses} />}
         </>
       )}
 
-      {/* History */}
+      {/* Historique */}
       <div>
         <h2 className="text-sm font-semibold mb-2 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
           Historique
         </h2>
         {historyLoading ? (
           <div className="skeleton h-12 w-full" />
-        ) : history.length <= 1 ? (
+        ) : history.filter((p: any) => p.id !== pronostic?.id).length === 0 ? (
           <p className="text-xs" style={{ color: 'var(--text-faint)' }}>Aucun pronostic antérieur.</p>
         ) : (
           <div className="space-y-1.5">
-            {history.filter((p: any) => p.id !== pronostic?.id).map((p: any) => (
-              <div key={p.id} className="card overflow-hidden">
-                <div className="flex items-center justify-between p-3 cursor-pointer transition-colors"
-                  onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)')}
-                  onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
-                  onClick={() => setHistoryExpanded(historyExpanded === p.id ? null : p.id)}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium truncate" style={{ color: 'var(--text)' }}>
-                      {p.race?.raceName || p.baseHorse || `Pronostic #${p.id}`}
-                    </p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
-                      {format(new Date(p.date), 'dd/MM/yyyy', { locale: fr })}
-                      {p.race && ` · ${p.race.hippodrome}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium tabular-nums" style={{ color: 'var(--yellow-text)' }}>
-                      {p.confidenceScore}/100
-                    </span>
-                    <Badge status={p.isSent ? 'SENT' : 'DRAFT'} />
-                    {historyExpanded === p.id
-                      ? <ChevronUp size={14} style={{ color: 'var(--text-faint)' }} />
-                      : <ChevronDown size={14} style={{ color: 'var(--text-faint)' }} />}
-                  </div>
-                </div>
-                <AnimatePresence>
-                  {historyExpanded === p.id && (
-                    <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
-                      <div className="px-3 pb-3 pt-1 text-xs" style={{ borderTop: '1px solid var(--border)' }}>
-                        <p style={{ color: 'var(--text-muted)' }}>
-                          <span className="font-medium">Base:</span> {p.baseHorse || '—'} · <span className="font-medium">Outsider:</span> {p.outsider || '—'}
+            {(history as any[])
+              .filter((p) => p.id !== pronostic?.id)
+              .map((p) => {
+                const proposals: Proposal[] = (p.proposals as Proposal[]) || [];
+                const pronoDuJour = proposals.find((x) => x.id === 'prono_du_jour');
+                const raceType = p.race?.raceType || '';
+                return (
+                  <div key={p.id} className="card overflow-hidden">
+                    <div
+                      className="flex items-center justify-between p-3 cursor-pointer transition-colors"
+                      onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = 'var(--bg-hover)')}
+                      onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = 'transparent')}
+                      onClick={() => setHistoryExpanded(historyExpanded === p.id ? null : p.id)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        {/* Ligne 1 : type · hippodrome · date */}
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          {raceType && (
+                            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded"
+                              style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)' }}>
+                              {raceType}
+                            </span>
+                          )}
+                          <span className="text-[11px] font-medium truncate" style={{ color: 'var(--text)' }}>
+                            {p.race?.hippodrome || '—'}
+                          </span>
+                          <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>·</span>
+                          <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
+                            {format(new Date(p.date), 'dd/MM/yyyy', { locale: fr })}
+                          </span>
+                        </div>
+                        {/* Ligne 2 : nom de la course */}
+                        <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
+                          {p.race?.raceName || `Pronostic #${p.id}`}
                         </p>
-                        <p className="mt-1" style={{ color: 'var(--text-muted)' }}>
-                          <span className="font-medium">Tiercé:</span> {Array.isArray(p.tierce) ? p.tierce.join(' — ') : '—'}
-                        </p>
+                        {/* Ligne 3 : numéros du prono du jour directement visibles */}
+                        {pronoDuJour && (
+                          <p className="text-[11px] tabular-nums mt-0.5 font-mono" style={{ color: 'var(--text-faint)' }}>
+                            {pronoDuJour.nums.join(' · ')}
+                          </p>
+                        )}
                       </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            ))}
+                      <div className="flex items-center gap-2 ml-2 shrink-0">
+                        {pronoDuJour && (
+                          <span className="text-xs font-bold tabular-nums" style={{ color: 'var(--yellow-text)' }}>
+                            {pronoDuJour.confidence}%
+                          </span>
+                        )}
+                        <Badge status={p.isSent ? 'SENT' : 'DRAFT'} />
+                        {historyExpanded === p.id
+                          ? <ChevronUp size={14} style={{ color: 'var(--text-faint)' }} />
+                          : <ChevronDown size={14} style={{ color: 'var(--text-faint)' }} />}
+                      </div>
+                    </div>
+                    <AnimatePresence>
+                      {historyExpanded === p.id && (
+                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.18 }} className="overflow-hidden">
+                          <div className="px-3 pb-3 pt-2 space-y-2" style={{ borderTop: '1px solid var(--border)' }}>
+                            {/* Tous les pronostics en bref */}
+                            <div className="space-y-1">
+                              {proposals.map((prop) => (
+                                <div key={prop.id} className="flex items-baseline gap-2 text-[11px]">
+                                  <span className="font-semibold w-36 shrink-0 truncate"
+                                    style={{ color: confidenceColor(prop.confidence) }}>
+                                    {prop.title}
+                                  </span>
+                                  <span className="tabular-nums font-mono" style={{ color: 'var(--text-muted)' }}>
+                                    {prop.nums.join(' · ')}
+                                  </span>
+                                  <span className="ml-auto tabular-nums" style={{ color: 'var(--text-faint)' }}>
+                                    {prop.confidence}%
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                            {/* Arrivée officielle (si disponible) */}
+                            {p.result?.arrivalOrder && (
+                              <div className="pt-1" style={{ borderTop: '1px solid var(--border)' }}>
+                                <span className="text-[10px] font-semibold uppercase tracking-wide"
+                                  style={{ color: 'var(--text-faint)' }}>Arrivée </span>
+                                <span className="text-[11px] tabular-nums font-mono font-bold"
+                                  style={{ color: '#10B981' }}>
+                                  {(p.result.arrivalOrder as number[]).join(' · ')}
+                                </span>
+                              </div>
+                            )}
+                            {/* Analyse */}
+                            {p.commentary && (
+                              <p className="text-[11px] line-clamp-3 pt-1"
+                                style={{ borderTop: '1px solid var(--border)', color: 'var(--text-faint)' }}>
+                                {p.commentary}
+                              </p>
+                            )}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
           </div>
         )}
       </div>
@@ -594,10 +575,6 @@ export default function Pronostics() {
         onDone={onPipelineDone}
         onClose={() => setScrapingJob(null)}
       />
-
-      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title="Ajuster le pronostic" size="lg">
-        {editTarget && <EditModal pronostic={editTarget} onClose={() => setEditTarget(null)} />}
-      </Modal>
     </div>
   );
 }
