@@ -63,7 +63,7 @@ export default function Sidebar({ dark, onToggleTheme }: SidebarProps) {
             <Zap size={16} color="#000" />
           </div>
           <div>
-            <h1 className="font-bold text-base leading-none" style={{ color: 'var(--text)' }}>PMU</h1>
+            <h1 className="font-bold text-base leading-none" style={{ color: 'var(--text)' }}>IYA-PMU</h1>
             <p className="text-xs mt-0.5" style={{ color: 'var(--yellow-text)' }}>Pronostics</p>
           </div>
         </div>

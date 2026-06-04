@@ -40,7 +40,7 @@ export default function Login() {
           >
             <Zap size={22} color="#000" />
           </div>
-          <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>PMU Pronostics</h1>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>IYA-PMU Pronostics</h1>
           <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>Connectez-vous à votre espace admin</p>
         </div>
 

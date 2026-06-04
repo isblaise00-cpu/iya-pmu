@@ -1,0 +1,37 @@
+# ai-engine
+ai-engine/__pycache__/
+ai-engine/_lonab_cache/
+ai-engine/.env
+
+# backend
+backend/node_modules/
+backend/.env
+
+# frontend
+frontend/node_modules/
+frontend/.env
+
+# root
+node_modules/
+.env
+
+# keep examples
+!.env.example
+!ai-engine/.env.example
+!backend/.env.example
+
+# build
+dist/
+build/
+
+# python
+*.py[cod]
+*.pyo
+.venv/
+venv/
+
+# editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

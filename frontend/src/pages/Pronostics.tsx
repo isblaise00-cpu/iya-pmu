@@ -359,6 +359,7 @@ export default function Pronostics() {
 
   const race = today?.race;
   const pronostic = today?.pronostic;
+  const result = (pronostic as any)?.result ?? null;
   const horses: Horse[] = (pronostic?.horses as Horse[]) || [];
   const proposals: Proposal[] = (pronostic?.proposals as Proposal[]) || [];
   const [featured, ...rest] = proposals;
@@ -378,14 +379,16 @@ export default function Pronostics() {
               Envoyer aux abonnés
             </Button>
           )}
-          <Button
-            variant={race ? 'secondary' : 'primary'}
-            icon={<Play size={14} />}
-            loading={startMutation.isPending}
-            onClick={() => startMutation.mutate(!!race)}
-          >
-            {race ? 'Régénérer' : 'Lancer le pipeline'}
-          </Button>
+          {!result && (
+            <Button
+              variant={race ? 'secondary' : 'primary'}
+              icon={<Play size={14} />}
+              loading={startMutation.isPending}
+              onClick={() => startMutation.mutate(!!race)}
+            >
+              {race ? 'Régénérer' : 'Lancer le pipeline'}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -441,7 +444,7 @@ export default function Pronostics() {
 
           {/* Arrivée officielle */}
           <ResultsSection
-            result={(pronostic as any)?.result ?? null}
+            result={result}
             horses={horses}
             proposals={proposals}
             onFetch={() => resultsMutation.mutate()}
