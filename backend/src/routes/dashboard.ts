@@ -52,11 +52,11 @@ router.get('/charts', async (_req: Request, res: Response) => {
       })
     );
 
-    // Pronostics confidence scores (last 30)
+    // Pronostics confidence scores (last 30) — extrait depuis proposals[prono_du_jour].confidence
     const recentPronostics = await prisma.pronostic.findMany({
       where: { date: { gte: thirtyDaysAgo } },
       orderBy: { date: 'asc' },
-      select: { date: true, confidenceScore: true, isSent: true },
+      select: { date: true, proposals: true, isSent: true },
     });
 
     // Results vs pronostics for success rate
@@ -68,11 +68,13 @@ router.get('/charts', async (_req: Request, res: Response) => {
     const successRate = resultsWithPronostics.reduce(
       (acc, r) => {
         if (!r.pronostic) return acc;
-        const arr = Array.isArray(r.arrivalOrder) ? (r.arrivalOrder as string[]) : [];
-        const tierce = Array.isArray(r.pronostic.tierce) ? (r.pronostic.tierce as string[]) : [];
-        const tierceMatch = tierce.filter((h) => arr.slice(0, 3).includes(h)).length;
+        const arr = Array.isArray(r.arrivalOrder) ? (r.arrivalOrder as number[]) : [];
+        const proposals = Array.isArray(r.pronostic.proposals) ? r.pronostic.proposals : [];
+        const pronoDuJour = (proposals as any[]).find((p: any) => p.id === 'prono_du_jour');
+        const predicted: number[] = pronoDuJour?.nums || [];
+        const matches = predicted.filter((n) => arr.slice(0, 3).includes(n)).length;
         acc.total += 1;
-        if (tierceMatch >= 2) acc.success += 1;
+        if (matches >= 2) acc.success += 1;
         return acc;
       },
       { total: 0, success: 0 }
@@ -80,11 +82,15 @@ router.get('/charts', async (_req: Request, res: Response) => {
 
     res.json({
       subscriberGrowth,
-      pronosticsConfidence: recentPronostics.map((p) => ({
-        date: p.date.toISOString().slice(0, 10),
-        score: p.confidenceScore,
-        sent: p.isSent,
-      })),
+      pronosticsConfidence: recentPronostics.map((p) => {
+        const proposals = Array.isArray(p.proposals) ? p.proposals : [];
+        const pronoDuJour = (proposals as any[]).find((x: any) => x.id === 'prono_du_jour');
+        return {
+          date: (p.date as Date).toISOString().slice(0, 10),
+          score: pronoDuJour?.confidence ?? null,
+          sent: p.isSent,
+        };
+      }),
       successRate: {
         total: successRate.total,
         success: successRate.success,
