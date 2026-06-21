@@ -11,6 +11,7 @@ import SMS from './pages/SMS';
 import Results from './pages/Results';
 import SettingsPage from './pages/Settings';
 import Users from './pages/Users';
+import SportsPronostics from './pages/SportsPronostics';
 
 export default function App() {
   return (
@@ -28,6 +29,7 @@ export default function App() {
               <Route path="/results" element={<Results />} />
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/users" element={<Users />} />
+              <Route path="/sports/:sport" element={<SportsPronostics />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

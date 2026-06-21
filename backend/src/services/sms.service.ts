@@ -127,6 +127,44 @@ export async function handleIncomingSms(phone: string, body: string) {
   return { handled: true, response: responseMessage };
 }
 
+export async function sendSportPronosticToActiveSubscribers(pronosticId: number, sport: string) {
+  const pronostic = await prisma.sportPronostic.findUnique({
+    where: { id: pronosticId },
+    include: { event: true },
+  });
+  if (!pronostic) throw new Error('Pronostic sportif introuvable');
+
+  const templateKey = sport === 'FOOTBALL' ? 'sms_default_foot' : 'sms_default_basket';
+  const templateSetting = await prisma.setting.findUnique({ where: { key: templateKey } });
+  const template = templateSetting?.value
+    ?? (sport === 'FOOTBALL'
+      ? 'Prono FOOT {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%'
+      : 'Prono BASKET {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%');
+
+  const ev = pronostic.event as any;
+  const predictions = (pronostic.predictions as any[]) || [];
+  const topPrediction = predictions[0];
+  const marketLabel = topPrediction
+    ? `${topPrediction.label} (${Math.round((topPrediction.model_prob ?? 0) * 100)}%)`
+    : 'N/A';
+
+  const message = template
+    .replace('{date}', format(pronostic.date, 'dd/MM/yyyy', { locale: fr }))
+    .replace('{home}', ev?.homeTeam ?? '')
+    .replace('{away}', ev?.awayTeam ?? '')
+    .replace('{league}', ev?.league ?? '')
+    .replace('{market}', marketLabel)
+    .replace('{confidence}', String(pronostic.confidence));
+
+  const activeSubscribers = await prisma.subscriber.findMany({ where: { status: 'ACTIVE' } });
+  const results = await Promise.all(activeSubscribers.map((sub) => sendSmsToSubscriber(sub.id, message)));
+  await prisma.sportPronostic.update({ where: { id: pronosticId }, data: { isSent: true } });
+
+  const sent = results.filter((r) => r.success).length;
+  logger.info(`Pronostic ${sport} #${pronosticId} envoyé à ${sent}/${activeSubscribers.length} abonnés`);
+  return { total: activeSubscribers.length, sent, failed: activeSubscribers.length - sent };
+}
+
 export async function checkExpiringSubscriptions() {
   const in2days = new Date(Date.now() + 2 * 86400000);
   const tomorrow = new Date(Date.now() + 86400000);

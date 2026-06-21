@@ -40,6 +40,13 @@ async function main() {
     { key: 'sms_default_prono', value: 'Prono PMUB {date} - {hippodrome} : {nums} (Confiance : {confidence}%)' },
     { key: 'sms_expired', value: 'Votre abonnement PMU-PRONO a expiré. Pour renouveler, contactez-nous.' },
     { key: 'sms_unknown', value: "Bonjour ! Vous n'êtes pas abonné à PMU-PRONO. Contactez-nous pour vous abonner." },
+    // Multi-sports
+    { key: 'football_scraping_time', value: '08:00' },
+    { key: 'basketball_scraping_time', value: '08:30' },
+    { key: 'football_leagues', value: '39,140,135,78,61,2' },
+    { key: 'basketball_leagues', value: '12' },
+    { key: 'sms_default_foot', value: 'Prono FOOT {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%' },
+    { key: 'sms_default_basket', value: 'Prono BASKET {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%' },
   ];
 
   for (const s of defaultSettings) {

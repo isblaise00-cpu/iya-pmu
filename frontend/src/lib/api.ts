@@ -75,3 +75,15 @@ export const getDashboardCharts = () => api.get('/dashboard/charts').then((r) =>
 // Settings
 export const getSettings = () => api.get('/settings').then((r) => r.data);
 export const updateSettings = (data: any) => api.put('/settings', data).then((r) => r.data);
+
+// Sports pronostics
+export const getSportPronostics = (sport: string) => api.get(`/sports/${sport}`).then((r) => r.data);
+export const getSportPronosticsToday = (sport: string) => api.get(`/sports/${sport}/today`).then((r) => r.data);
+export const updateSportPronostic = (sport: string, id: number, data: any) =>
+  api.put(`/sports/${sport}/${id}`, data).then((r) => r.data);
+export const startSportPipeline = (sport: string, force = false) =>
+  api.post(`/sports/${sport}/scrape/start${force ? '?force=true' : ''}`).then((r) => r.data as { jobId: string });
+export const getSportScrapingJob = (sport: string, jobId: string) =>
+  api.get(`/sports/${sport}/scrape/job/${jobId}`).then((r) => r.data);
+export const sendSportPronostic = (sport: string, id: number) =>
+  api.post(`/sports/${sport}/${id}/send`).then((r) => r.data);

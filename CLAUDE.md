@@ -105,6 +105,37 @@ Single `.env` at repo root, consumed by all three services. The example is in [.
 
 The Anthropic model in [ai_engine.py:54](ai-engine/ai_engine.py#L54) defaults to `claude-sonnet-4-20250514` — override via `ANTHROPIC_MODEL` rather than editing the source.
 
+### Multi-sports pipeline (Football / Basketball)
+
+A second pipeline runs independently of the hippique one. Entry point: [ai-engine/sports/pipeline.py](ai-engine/sports/pipeline.py).
+
+**Key principle:** The LLM (Claude/Groq) **never computes probabilities**. Statistical models output exact numbers; the LLM provides qualitative analysis using those numbers verbatim.
+
+**Data flow:**
+1. **Scheduler fires** at `football_scraping_time` / `basketball_scraping_time` (settings, defaults 08:00 / 08:30) via separate APScheduler jobs (`pipeline_football`, `pipeline_basketball`).
+2. **Source fetches** matches from API-Sports (API-Football v3 or API-Basketball v1). Responses cached as JSON under `ai-engine/_sports_cache/<SPORT>/<date>/`. Keys: `FOOTBALL_API_KEY`, `BASKETBALL_API_KEY`. If key is absent, source returns empty lists gracefully (no crash).
+3. **Enrichment** (`asyncio.gather`): team form × 2 + H2H + standings + odds — all concurrent. Any exception → safe empty fallback.
+4. **Statistical model** computes probabilities:
+   - Football: Dixon-Coles bivariate Poisson + τ correction + 15% H2H blend. Output keys: `prob_1`, `prob_x`, `prob_2`, `prob_over_2_5`, `prob_btts`.
+   - Basketball: pace-adjusted efficiency + normal CDF. Output keys: `prob_home`, `prob_away`, `prob_over`, `cover_prob_spread`, `expected_total`, `expected_margin`.
+5. **Analyzer** ([ai-engine/sports/analyzer.py](ai-engine/sports/analyzer.py)) sends model probs + match data to LLM. Output: `{predictions, value_bets, confidence, commentary}`. Falls back to mock if AI_PROVIDER=mock or key missing.
+6. **Persist**: `SportEvent` → `SportPronostic` in MySQL. One pronostic per match per day.
+7. **Backend proxies** scrape triggers: `POST /api/sports/:sport/scrape/start` → AI engine. Frontend polls job status via `GET /api/sports/:sport/scrape/job/:jobId`.
+
+**Abstraction layer** ([ai-engine/sports/](ai-engine/sports/)):
+- `base.py`: `SportSource` ABC (5 async methods) + `SportModel` ABC (`compute()` + concrete `value_bets()`)
+- `registry.py`: maps `"FOOTBALL"` / `"BASKETBALL"` → `(Source, Model)` instances
+- `sources/football_source.py`, `sources/basketball_source.py`: API adapters
+- `models/football_model.py`, `models/basketball_model.py`: statistical models
+
+**DB tables**: `sport_events`, `sport_pronostics`, `sport_results` — defined in both [backend/prisma/schema.prisma](backend/prisma/schema.prisma) and [ai-engine/database.py](ai-engine/database.py) (keep in sync).
+
+**Frontend**: `/sports/football` and `/sports/basketball` routes → [frontend/src/pages/SportsPronostics.tsx](frontend/src/pages/SportsPronostics.tsx). Sport tabs navigate between routes via `useParams`.
+
+**SMS templates**: `sms_default_foot` and `sms_default_basket` settings. Placeholders: `{date}`, `{home}`, `{away}`, `{league}`, `{market}`, `{confidence}`.
+
+**League IDs** (API-Sports): stored in settings `football_leagues` (default `39,140,135,78,61,2` = PL/La Liga/Serie A/Bundesliga/Ligue 1/UCL) and `basketball_leagues` (default `12,120` = NBA/EuroLeague).
+
 ## Language conventions
 
 User-facing strings (admin UI labels, SMS templates, AI prompts, log messages in some places) are in **French**. Code identifiers, comments, and route paths are English. The pronostic data model uses French betting terms (`tierce`, `quarte`, `quinte`, `outsider`, `base_horse`) — keep these names; they're domain vocabulary, not typos.
