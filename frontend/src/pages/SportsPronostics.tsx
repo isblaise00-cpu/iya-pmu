@@ -220,8 +220,8 @@ function MatchCard({ prono, sport, onSent }: { prono: SportPronostic; sport: str
               <div className="text-xs" style={{ color: 'var(--text-faint)' }}>confiance</div>
             </div>
             {prono.isSent
-              ? <Badge variant="success">Envoyé</Badge>
-              : <Badge variant="warning">En attente</Badge>}
+              ? <Badge status="SENT" />
+              : <Badge status="PENDING" />}
           </div>
         </div>
 
@@ -241,7 +241,7 @@ function MatchCard({ prono, sport, onSent }: { prono: SportPronostic; sport: str
         <div className="mt-3 flex items-center gap-2">
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={() => setExpanded(!expanded)}
             icon={expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           >
@@ -430,31 +430,23 @@ export default function SportsPronostics() {
         </div>
       </div>
 
-      {/* Pipeline button */}
-      <div className="flex items-center gap-3">
-        <Button
-          icon={<Play size={14} />}
-          onClick={() => startMutation.mutate(false)}
-          disabled={startMutation.isPending}
-        >
-          {startMutation.isPending ? 'Lancement…' : 'Lancer le pipeline'}
-        </Button>
-        {alreadyHasPronostics && (
+      {/* Pipeline button — masqué quand les pronostics du jour sont déjà générés */}
+      {!alreadyHasPronostics && (
+        <div className="flex items-center gap-3">
           <Button
-            variant="outline"
             icon={<Play size={14} />}
-            onClick={() => startMutation.mutate(true)}
+            onClick={() => startMutation.mutate(false)}
             disabled={startMutation.isPending}
           >
-            Regénérer (force)
+            {startMutation.isPending ? 'Lancement…' : 'Lancer le pipeline'}
           </Button>
-        )}
-        {pronostics.length > 0 && (
-          <span className="text-sm" style={{ color: 'var(--text-faint)' }}>
-            {pronostics.length} match(s) aujourd'hui
-          </span>
-        )}
-      </div>
+        </div>
+      )}
+      {alreadyHasPronostics && (
+        <span className="text-sm" style={{ color: 'var(--text-faint)' }}>
+          {pronostics.length} match(s) aujourd'hui
+        </span>
+      )}
 
       {/* Content */}
       {isLoading ? (
