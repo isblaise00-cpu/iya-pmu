@@ -3,41 +3,41 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { Check, X } from 'lucide-react';
 import { getResults } from '../lib/api';
+import { pronosticCoverage } from '../lib/pronostic-coverage';
 
 function calculateSuccessRate(results: any[]) {
-  let total = 0, successTierce = 0, successQuinte = 0;
+  let total = 0, mainSuccess = 0, covered = 0;
   for (const r of results) {
     if (!r.pronostic) continue;
+    const evaluation = pronosticCoverage(r.pronostic.proposals || [], r.arrivalOrder || []);
+    if (!evaluation.complete) continue;
     total++;
-    const arr: string[] = Array.isArray(r.arrivalOrder) ? r.arrivalOrder : [];
-    const tierce: string[] = Array.isArray(r.pronostic.tierce) ? r.pronostic.tierce : [];
-    const quinte: string[] = Array.isArray(r.pronostic.quinte) ? r.pronostic.quinte : [];
-    if (tierce.filter((h) => arr.slice(0, 3).includes(h)).length >= 2) successTierce++;
-    if (quinte.filter((h) => arr.slice(0, 5).includes(h)).length >= 3) successQuinte++;
+    if (evaluation.mainHits === evaluation.size) mainSuccess++;
+    if (evaluation.covered) covered++;
   }
-  return { total, successTierce, successQuinte };
+  return { total, mainSuccess, covered };
 }
 
 export default function Results() {
   const { data: results = [], isLoading } = useQuery({ queryKey: ['results'], queryFn: getResults });
 
   const stats = calculateSuccessRate(results);
-  const tierceRate = stats.total > 0 ? Math.round((stats.successTierce / stats.total) * 100) : 0;
-  const quinteRate = stats.total > 0 ? Math.round((stats.successQuinte / stats.total) * 100) : 0;
+  const mainRate = stats.total > 0 ? Math.round((stats.mainSuccess / stats.total) * 100) : 0;
+  const coverageRate = stats.total > 0 ? Math.round((stats.covered / stats.total) * 100) : 0;
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Résultats</h1>
-        <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>Historique et taux de réussite</p>
+        <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>Arrivées complètes retrouvées en désordre. Les résultats incomplets sont exclus des taux.</p>
       </div>
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {[
           { label: 'Courses analysées', value: stats.total },
-          { label: 'Réussite Tiercé (≥2/3)', value: `${tierceRate}%` },
-          { label: 'Réussite Quinté (≥3/5)', value: `${quinteRate}%` },
+          { label: 'Sélection principale complète', value: `${mainRate}%` },
+          { label: 'Arrivée couverte par une combinaison', value: `${coverageRate}%` },
         ].map(({ label, value }) => (
           <div key={label} className="card p-5">
             <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>{label}</p>
@@ -55,7 +55,7 @@ export default function Results() {
           <table className="w-full">
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                {['Date', 'Base Pronostiqué', 'Tiercé Pronostiqué', 'Arrivée Officielle', 'Tiercé ✓', 'Quinté ✓'].map((h) => (
+                {['Date', 'Course', 'Sélection principale', 'Arrivée officielle', 'Chevaux retrouvés (meilleur groupe)', 'Arrivée couverte'].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: 'var(--text-muted)' }}>{h}</th>
                 ))}
               </tr>
@@ -76,10 +76,9 @@ export default function Results() {
               ) : (
                 results.map((r: any) => {
                   const arr: string[] = Array.isArray(r.arrivalOrder) ? r.arrivalOrder : [];
-                  const tierce: string[] = Array.isArray(r.pronostic?.tierce) ? r.pronostic.tierce : [];
-                  const quinte: string[] = Array.isArray(r.pronostic?.quinte) ? r.pronostic.quinte : [];
-                  const tierceHit = tierce.filter((h) => arr.slice(0, 3).includes(h)).length >= 2;
-                  const quinteHit = quinte.filter((h) => arr.slice(0, 5).includes(h)).length >= 3;
+                  const proposals = r.pronostic?.proposals || [];
+                  const main = proposals.find((p: any) => p.id === 'prono_du_jour');
+                  const evaluation = pronosticCoverage(proposals, arr.map(Number));
 
                   return (
                     <tr key={r.id} style={{ borderBottom: '1px solid var(--border)' }}
@@ -88,24 +87,19 @@ export default function Results() {
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
                         {format(new Date(r.date), 'dd/MM/yyyy', { locale: fr })}
                       </td>
-                      <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--text)' }}>{r.pronostic?.baseHorse || '—'}</td>
+                      <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--text)' }}>{r.pronostic?.race?.raceType || '—'}</td>
                       <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
-                        {tierce.join(' · ') || '—'}
+                        {main?.nums?.join(' · ') || '—'}
                       </td>
                       <td className="px-4 py-3 text-sm font-medium" style={{ color: 'var(--yellow-text)' }}>
                         {arr.slice(0, 5).join(' · ') || '—'}
                       </td>
                       <td className="px-4 py-3">
-                        {r.pronostic
-                          ? tierceHit
-                            ? <Check size={15} style={{ color: 'var(--yellow)' }} />
-                            : <X size={15} style={{ color: 'var(--text-faint)' }} />
-                          : <span style={{ color: 'var(--text-faint)' }}>—</span>
-                        }
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{evaluation.size ? `${evaluation.bestHits}/${evaluation.size}${evaluation.complete ? '' : ' · arrivée incomplète'}` : '—'}</span>
                       </td>
                       <td className="px-4 py-3">
-                        {r.pronostic
-                          ? quinteHit
+                        {evaluation.complete
+                          ? evaluation.covered
                             ? <Check size={15} style={{ color: 'var(--yellow)' }} />
                             : <X size={15} style={{ color: 'var(--text-faint)' }} />
                           : <span style={{ color: 'var(--text-faint)' }}>—</span>

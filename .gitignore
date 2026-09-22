@@ -2,14 +2,17 @@
 ai-engine/__pycache__/
 ai-engine/_lonab_cache/
 ai-engine/.env
+ai-engine/.env.example
 
 # backend
 backend/node_modules/
 backend/.env
+backend/.env.example
 
 # frontend
 frontend/node_modules/
 frontend/.env
+frontend/.env.example
 
 # root
 node_modules/

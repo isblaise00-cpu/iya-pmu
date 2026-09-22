@@ -37,7 +37,7 @@ async function main() {
   // Settings
   const defaultSettings = [
     { key: 'scraping_time', value: '07:00' },
-    { key: 'sms_default_prono', value: 'Prono PMUB {date} - {hippodrome} : {nums} (Confiance : {confidence}%)' },
+    { key: 'sms_default_prono', value: 'Prono PMUB {date} - {hippodrome} : {nums} (Score de sélection : {score}/100)' },
     { key: 'sms_expired', value: 'Votre abonnement PMU-PRONO a expiré. Pour renouveler, contactez-nous.' },
     { key: 'sms_unknown', value: "Bonjour ! Vous n'êtes pas abonné à PMU-PRONO. Contactez-nous pour vous abonner." },
     // Multi-sports

@@ -3,6 +3,7 @@ import { smsAdapter } from '../adapters/sms.adapter';
 import { logger } from '../lib/logger';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { renderHippiqueSms } from '../lib/hippique-sms';
 
 export async function sendSmsToSubscriber(subscriberId: number, message: string, campaignId?: number) {
   const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
@@ -31,7 +32,6 @@ export async function sendPronosticToActiveSubscribers(pronosticId: number) {
   if (!pronostic) throw new Error('Pronostic not found');
 
   const templateSetting = await prisma.setting.findUnique({ where: { key: 'sms_default_prono' } });
-  const template = templateSetting?.value ?? 'Prono PMUB {date} - {hippodrome} : {nums} (Confiance : {confidence}%)';
 
   const proposals = (pronostic.proposals as any[]) || [];
   const pronoDuJour = proposals.find((p: any) => p.id === 'prono_du_jour') || proposals[0];
@@ -39,11 +39,10 @@ export async function sendPronosticToActiveSubscribers(pronosticId: number) {
   const confidence = pronoDuJour?.confidence ?? 0;
   const hippodrome = (pronostic.race as any)?.hippodrome ?? '';
 
-  const message = template
-    .replace('{date}', format(pronostic.date, 'dd/MM/yyyy', { locale: fr }))
-    .replace('{hippodrome}', hippodrome)
-    .replace('{nums}', nums)
-    .replace('{confidence}', String(confidence));
+  const message = renderHippiqueSms(templateSetting?.value, {
+    date: format(pronostic.date, 'dd/MM/yyyy', { locale: fr }),
+    hippodrome, nums, confidence, score: pronoDuJour?.score,
+  });
 
   const activeSubscribers = await prisma.subscriber.findMany({ where: { status: 'ACTIVE' } });
   const results = await Promise.all(activeSubscribers.map((sub) => sendSmsToSubscriber(sub.id, message)));
@@ -88,7 +87,10 @@ export async function handleIncomingSms(phone: string, body: string) {
           const nums = (pronoDuJour?.nums as number[] || []).join(' - ');
           const confidence = pronoDuJour?.confidence ?? 0;
           const hippodrome = (prono.race as any)?.hippodrome ?? '';
-          responseMessage = `🏇 Prono PMUB ${hippodrome}\n🎯 Sélection : ${nums}\n✅ Confiance : ${confidence}%`;
+          responseMessage = renderHippiqueSms(undefined, {
+            date: format(prono.date, 'dd/MM/yyyy', { locale: fr }),
+            hippodrome, nums, confidence, score: pronoDuJour?.score,
+          });
         }
         break;
       }

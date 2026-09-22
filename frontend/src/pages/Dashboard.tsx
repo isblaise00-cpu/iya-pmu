@@ -31,6 +31,8 @@ export default function Dashboard() {
   const recentPronostics = pronostics?.slice(0, 5) || [];
   const recentSubscribers = subscribers?.slice(0, 5) || [];
   const today = stats?.todayPronostic;
+  const todaySelection = today?.proposals?.find((p: any) => p.id === 'prono_du_jour');
+  const todayScore = todaySelection?.score ?? todaySelection?.confidence;
   const successRate = charts?.successRate;
 
   return (
@@ -86,7 +88,7 @@ export default function Dashboard() {
 
         <div className="card p-4">
           <h2 className="text-xs font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>
-            Score de Confiance (30j)
+            Score des pronostics (30j)
           </h2>
           {chartsLoading ? (
             <div className="skeleton h-32 w-full" />
@@ -117,18 +119,18 @@ export default function Dashboard() {
           {today ? (
             <>
               <p className="text-sm font-bold mb-2 leading-snug" style={{ color: 'var(--text)' }}>
-                {today.baseHorse || 'N/A'}
+                {todaySelection?.nums?.join(' – ') || 'N/A'}
               </p>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-bold" style={{ color: 'var(--yellow-text)' }}>
-                  {today.confidenceScore}
+                  {todayScore ?? '—'}
                 </span>
                 <span className="text-xs" style={{ color: 'var(--text-muted)' }}>/100</span>
-                <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>confiance</span>
+                <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>{todaySelection?.score !== undefined ? 'score de sélection' : 'ancienne confiance'}</span>
               </div>
               <div className="mt-2 w-full h-1 rounded-full" style={{ background: 'rgba(0,0,0,0.08)' }}>
                 <div className="h-1 rounded-full transition-all duration-700"
-                  style={{ width: `${today.confidenceScore}%`, background: 'var(--yellow)' }} />
+                  style={{ width: `${todayScore ?? 0}%`, background: 'var(--yellow)' }} />
               </div>
             </>
           ) : (
@@ -139,7 +141,7 @@ export default function Dashboard() {
         <div className="card p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
-              <CheckCircle2 size={12} style={{ color: 'var(--yellow)' }} /> Taux de Réussite
+              <CheckCircle2 size={12} style={{ color: 'var(--yellow)' }} /> Arrivées couvertes (désordre)
             </span>
             <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>30j</span>
           </div>
@@ -201,7 +203,7 @@ export default function Dashboard() {
                   style={{ borderTop: i === 0 ? 'none' : '1px solid var(--border)' }}>
                   <div className="min-w-0 flex-1 mr-3">
                     <p className="text-xs font-medium truncate" style={{ color: 'var(--text)' }}>
-                      {p.baseHorse || 'N/A'}
+                      {p.proposals?.find((x: any) => x.id === 'prono_du_jour')?.nums?.join(' – ') || 'N/A'}
                     </p>
                     <p className="text-[11px]" style={{ color: 'var(--text-faint)' }}>
                       {format(new Date(p.date), 'dd/MM/yyyy', { locale: fr })}
@@ -209,7 +211,7 @@ export default function Dashboard() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[11px] font-semibold tabular-nums" style={{ color: 'var(--yellow-text)' }}>
-                      {p.confidenceScore}
+                      {(() => { const main = p.proposals?.find((x: any) => x.id === 'prono_du_jour'); return main?.score ?? main?.confidence ?? '—'; })()}/100
                     </span>
                     <Badge status={p.isSent ? 'SENT' : 'DRAFT'} />
                   </div>

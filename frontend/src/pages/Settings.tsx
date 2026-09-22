@@ -117,11 +117,14 @@ export default function SettingsPage() {
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>
             SMS Pronostic du jour
             <span className="ml-2 font-normal" style={{ color: 'var(--text-faint)' }}>
-              {'{date}'} {'{base}'} {'{tierce}'} {'{quarte}'} {'{quinte}'} {'{outsider}'} {'{score}'}
+              {'{date}'} {'{hippodrome}'} {'{nums}'} {'{score}'}
             </span>
           </label>
           <textarea value={form.sms_default_prono} onChange={set('sms_default_prono')}
             rows={5} className="input resize-none" />
+          <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
+            Le score de sélection s’écrit {'{score}'}/100. Il ne représente pas une probabilité de réussite.
+          </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
             {form.sms_default_prono.length} car. · {Math.ceil(form.sms_default_prono.length / 160) || 0} SMS
           </p>

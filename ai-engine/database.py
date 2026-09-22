@@ -66,7 +66,6 @@ class Setting(Base):
     key   = Column(String(255), primary_key=True)
     value = Column(String(1000))
 
-
 # ─── Multi-sports (football + basketball) ───────────────────────────────────
 
 class SportEvent(Base):

@@ -43,7 +43,7 @@ Réponds UNIQUEMENT avec un JSON valide (sans markdown, sans commentaire) :
 RÈGLES :
 1. JSON valide uniquement — sans markdown, sans backticks
 2. arrival_order = numéros des chevaux dans l'ordre exact d'arrivée (du 1er au dernier placé)
-3. race_type = TIERCE, QUARTE ou QUINTE selon le document
+3. race_type = TIERCE, QUARTE ou QUINTE selon le document. « 4+1 » = QUINTE : extraire les CINQ chevaux.
 4. date au format YYYY-MM-DD
 5. Inclure uniquement les chevaux classés (3 pour TIERCE, 4 pour QUARTE, 5 pour QUINTE)
 """
@@ -345,6 +345,15 @@ async def fetch_and_save_results(
 
     text       = _extract_text(str(dest))
     data       = await _llm_extract(text)
+    from consensus_model import race_size
+    expected_size = race_size(race_type or data.get("race_type", ""))
+    arrival = data.get("arrival_order")
+    if (not isinstance(arrival, list) or len(arrival) != expected_size
+            or any(type(n) is not int or n <= 0 for n in arrival)
+            or len(set(arrival)) != expected_size):
+        raise ValueError("Arrivée extraite incomplète ou invalide ; aucun résultat n'a été enregistré.")
+    if data.get("date") != target.isoformat():
+        raise ValueError("La date du résultat extrait ne correspond pas à la course demandée.")
     result_id  = await _save_result(data, target, entry["url"])
 
     return {

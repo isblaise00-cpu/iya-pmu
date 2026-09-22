@@ -72,9 +72,16 @@ router.get('/charts', async (_req: Request, res: Response) => {
         const proposals = Array.isArray(r.pronostic.proposals) ? r.pronostic.proposals : [];
         const pronoDuJour = (proposals as any[]).find((p: any) => p.id === 'prono_du_jour');
         const predicted: number[] = pronoDuJour?.nums || [];
-        const matches = predicted.filter((n) => arr.slice(0, 3).includes(n)).length;
+        const size = predicted.length;
+        const official = arr.slice(0, size).map(Number);
+        if (size < 3 || official.length !== size || new Set(official).size !== size ||
+            !official.every(n => Number.isInteger(n) && n > 0)) return acc;
+        const consensus = (proposals as any[]).filter(p => p.source === 'consensus_v1');
+        const groups = consensus.length ? consensus : [pronoDuJour];
+        const covered = groups.some(p => Array.isArray(p?.nums) && p.nums.length === size &&
+          new Set(p.nums).size === size && p.nums.every((n: number) => official.includes(n)));
         acc.total += 1;
-        if (matches >= 2) acc.success += 1;
+        if (covered) acc.success += 1;
         return acc;
       },
       { total: 0, success: 0 }
@@ -87,7 +94,7 @@ router.get('/charts', async (_req: Request, res: Response) => {
         const pronoDuJour = (proposals as any[]).find((x: any) => x.id === 'prono_du_jour');
         return {
           date: (p.date as Date).toISOString().slice(0, 10),
-          score: pronoDuJour?.confidence ?? null,
+          score: pronoDuJour?.score ?? pronoDuJour?.confidence ?? null,
           sent: p.isSent,
         };
       }),
