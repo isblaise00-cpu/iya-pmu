@@ -7,7 +7,21 @@
       "Bash(npx tsx *)",
       "Bash(powershell -c \"\\(Get-Process -Id 25396\\).StartInfo.EnvironmentVariables | Out-String\")",
       "Bash(powershell -c \"Get-Process -Id 25396 | Select-Object Id, StartTime, Path | Format-List\")",
-      "PowerShell($proc = Get-WmiObject Win32_Process -Filter \"ProcessId = 25396\"; $proc.GetOwner\\(\\) | Out-Null; $proc | Format-List CommandLine, ExecutablePath)"
+      "PowerShell($proc = Get-WmiObject Win32_Process -Filter \"ProcessId = 25396\"; $proc.GetOwner\\(\\) | Out-Null; $proc | Format-List CommandLine, ExecutablePath)",
+      "Bash(ls c:/Users/KTGT3659/Documents/Perso/perso/pmu/pmu-platform/ai-engine/*.py)",
+      "Bash(python -c \"import uvicorn, fastapi, sqlalchemy, aiohttp, pdfplumber, bs4, apscheduler, loguru, groq; print\\('OK'\\)\")",
+      "Bash(py -3 -c \"import uvicorn, fastapi, sqlalchemy, aiohttp, pdfplumber, bs4, apscheduler, loguru, groq; print\\('OK'\\)\")",
+      "Bash(py -3 -m uvicorn main:app --reload --port 8000)",
+      "Bash(py -3 -c ':*)",
+      "Bash(py -3 -c \"import ast; ast.parse\\(open\\('c:/Users/KTGT3659/Documents/Perso/perso/pmu/pmu-platform/ai-engine/consensus_model.py', encoding='utf-8'\\).read\\(\\)\\); print\\('Syntaxe OK'\\)\")",
+      "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"admin@pmu.com\\\\\",\\\\\"password\\\\\":\\\\\"azertyuiop\\\\\"}')",
+      "Bash(curl -s http://localhost:4000/api/pronostics/today -H \"Authorization: Bearer $\\(curl -s -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{\\\\\"email\\\\\":\\\\\"admin@pmu.com\\\\\",\\\\\"password\\\\\":\\\\\"azertyuiop\\\\\"}')",
+      "Bash(py -3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k: type\\(v\\).__name__ if not isinstance\\(v,\\(dict,list\\)\\) else \\('array['+str\\(len\\(v\\)\\)+']' if isinstance\\(v,list\\) else 'object'\\) for k,v in d.items\\(\\)}, indent=2\\)\\)\")",
+      "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"email\\\\\":\\\\\"admin@pmu.com\\\\\",\\\\\"password\\\\\":\\\\\"azertyuiop\\\\\"}\")",
+      "Bash(py -3 -m json.tool --no-ensure-ascii)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\KTGT3659\\Documents\\Perso\\perso\\pmu\\pmu-platform\\ai-engine"
     ]
   }
 }

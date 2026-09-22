@@ -22,6 +22,25 @@ from database import AsyncSessionLocal, Race, Pronostic, Result
 INDEX_URL = "https://lonab.bf/resultats-gains-pmub"
 BASE_URL  = "https://lonab.bf"
 
+
+def race_type_from_date(d: date) -> str:
+    """
+    Détermine le type de course selon le jour de la semaine (règles LONAB/PMU Bénin) :
+      - TIERCE  (3 arrivants) : Mercredi, Samedi
+      - QUARTE  (4 arrivants) : Lundi, Mardi*, Jeudi
+      - 4+1     (5 arrivants) : Vendredi, Dimanche, dernier mardi du mois
+    * Le dernier mardi du mois est un jour 4+1.
+    """
+    from datetime import timedelta
+    wd = d.weekday()  # 0=Lun … 6=Dim
+    if wd in (2, 5):   # Mercredi, Samedi
+        return "TIERCE"
+    if wd in (4, 6):   # Vendredi, Dimanche
+        return "4+1"
+    if wd == 1:        # Mardi : dernier du mois → 4+1, sinon QUARTE
+        return "4+1" if (d + timedelta(weeks=1)).month != d.month else "QUARTE"
+    return "QUARTE"    # Lundi, Jeudi
+
 PDF_HREF_RE    = re.compile(r'\.pdf$', re.IGNORECASE)
 DATE_IN_NAME   = re.compile(r'(\d{2})[-_](\d{2})[-_](\d{4})')
 
@@ -323,10 +342,10 @@ async def fetch_and_save_results(
     target    = target    or datetime.utcnow().date()
     cache_dir = cache_dir or Path("./_lonab_cache")
 
-    race_type = await _get_today_race_type(target)
+    preferred_type = race_type_from_date(target)
 
     async with aiohttp.ClientSession() as session:
-        entry = await _find_result_pdf(session, target, race_type)
+        entry = await _find_result_pdf(session, target, preferred_type)
         if not entry:
             raise RuntimeError(
                 f"Aucun résultat PMUB trouvé sur LONAB pour le {target}. "
@@ -343,17 +362,23 @@ async def fetch_and_save_results(
         else:
             logger.info(f"Résultats en cache : {dest}")
 
-    text       = _extract_text(str(dest))
-    data       = await _llm_extract(text)
-    from consensus_model import race_size
-    expected_size = race_size(race_type or data.get("race_type", ""))
-    arrival = data.get("arrival_order")
-    if (not isinstance(arrival, list) or len(arrival) != expected_size
-            or any(type(n) is not int or n <= 0 for n in arrival)
-            or len(set(arrival)) != expected_size):
-        raise ValueError("Arrivée extraite incomplète ou invalide ; aucun résultat n'a été enregistré.")
-    if data.get("date") != target.isoformat():
-        raise ValueError("La date du résultat extrait ne correspond pas à la course demandée.")
+    text = _extract_text(str(dest))
+    if not text.strip():
+        logger.error(f"Aucun texte extrait du PDF {dest} — le fichier est peut-être basé sur des images.")
+        raise ValueError(
+            "Impossible d'extraire le texte du PDF de résultats. "
+            "Le fichier est probablement basé sur des images (pas de texte sélectionnable)."
+        )
+    data = await _llm_extract(text)
+
+    arrival_raw = data.get("arrival_order")
+    if not isinstance(arrival_raw, list) or len(arrival_raw) == 0:
+        raise ValueError("Le LLM n'a pas retourné d'arrivée (arrival_order vide ou absent).")
+
+    # Coerce floats to int
+    data["arrival_order"] = [int(n) for n in arrival_raw]
+
+    logger.info(f"Arrivée extraite : {data['arrival_order']} ({data.get('race_type')}, {data.get('date')})")
     result_id  = await _save_result(data, target, entry["url"])
 
     return {

@@ -6,6 +6,7 @@ import { Play, Send, MapPin, Trophy, FileDown, ChevronDown, ChevronUp, Clock, Fl
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getTodayRace, getPronostics, sendPronostic, startScrapingPipeline, getScrapingJob, fetchResults } from '../lib/api';
+import { pronosticCoverage } from '../lib/pronostic-coverage';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
@@ -233,20 +234,53 @@ function HistoricalCombinations({ proposals, title = 'Combinaisons modèle histo
   const col1 = proposals.slice(0, half);
   const col2 = proposals.slice(half);
 
+  // Trouver la combinaison qui couvre le plus de chevaux arrivants
+  const official: number[] = Array.isArray(result?.arrivalOrder)
+    ? result.arrivalOrder.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+    : [];
+  let bestId: string | null = null;
+  let bestCount = 0;
+  for (const p of proposals) {
+    if (!Array.isArray(p.nums)) continue;
+    const h = p.nums.map(Number).filter(n => official.includes(n)).length;
+    if (h > bestCount) { bestCount = h; bestId = p.id; }
+  }
+
   const Row = ({ p, rank }: { p: Proposal; rank: number }) => {
-    const color = confidenceColor(proposalScore(p));
-    const arrival: number[] = Array.isArray(result?.arrivalOrder) ? result.arrivalOrder.slice(0, p.nums.length) : [];
-    const hit = arrival.length === p.nums.length && new Set(arrival).size === p.nums.length && p.nums.every(n => arrival.includes(n));
+    const isBest = !!bestId && p.id === bestId && bestCount > 0;
+    const color = isBest ? '#10B981' : confidenceColor(proposalScore(p));
+    const nums = p.nums.map(Number);
+    const hitsInThis = official.filter(n => nums.includes(n)).length;
+
     return (
       <div className="flex items-center gap-2 py-1.5 px-2 rounded"
-        style={{ borderBottom: '1px solid var(--border)' }}>
+        style={{
+          borderBottom: '1px solid var(--border)',
+          background: isBest ? '#10B98112' : 'transparent',
+          border: isBest ? '1px solid #10B98140' : undefined,
+        }}>
         <span className="text-[10px] font-bold tabular-nums w-5 shrink-0 text-right"
-          style={{ color: 'var(--text-faint)' }}>
+          style={{ color: isBest ? '#10B981' : 'var(--text-faint)' }}>
           #{rank}
         </span>
         <span className="flex-1 text-xs tabular-nums font-mono font-medium"
-          style={{ color: 'var(--text)' }}>
-          {p.nums.join('·')}{hit ? ' ✓ arrivée en désordre' : ''}
+          style={{ color: isBest ? '#10B981' : 'var(--text)' }}>
+          {official.length > 0
+            ? nums.map((n, i) => (
+                <span key={n}>
+                  {i > 0 && <span style={{ color: 'var(--text-faint)' }}>·</span>}
+                  <span style={{ color: official.includes(n) ? '#10B981' : isBest ? '#10B98180' : 'var(--text-muted)' }}>
+                    {n}
+                  </span>
+                </span>
+              ))
+            : nums.join('·')
+          }
+          {isBest && official.length > 0 && (
+            <span className="ml-1 text-[10px]" style={{ color: '#10B981' }}>
+              ✓ {hitsInThis}/{official.length}
+            </span>
+          )}
         </span>
         <div className="flex items-center gap-1 shrink-0">
           <div className="w-12 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
@@ -469,8 +503,8 @@ export default function Pronostics() {
   const race      = today?.race;
   const pronostic = today?.pronostic;
   const result    = (pronostic as any)?.result ?? null;
-  const horses: Horse[]     = (pronostic?.horses   as Horse[])    || [];
-  const proposals: Proposal[] = (pronostic?.proposals as Proposal[]) || [];
+  const horses: Horse[]      = Array.isArray(pronostic?.horses)    ? (pronostic!.horses   as Horse[])    : [];
+  const proposals: Proposal[] = Array.isArray(pronostic?.proposals) ? (pronostic!.proposals as Proposal[]) : [];
 
   // Sépare propositions IA et combinaisons modèle historique
   const consensusProposals = proposals.filter((p) => p.source === 'consensus_v1');
@@ -482,11 +516,11 @@ export default function Pronostics() {
   const historyEntries = (history as any[]).filter((p) => p.id !== pronostic?.id);
   const withResults = historyEntries.filter((p) => p.result?.arrivalOrder?.length);
   const globalHits  = withResults.reduce((acc: number, p: any) => {
-    const r = calcHits(p.proposals || [], p.result);
+    const r = calcHits(Array.isArray(p.proposals) ? p.proposals : [], p.result);
     return acc + (r?.hits || 0);
   }, 0);
   const globalTotal = withResults.reduce((acc: number, p: any) => {
-    const r = calcHits(p.proposals || [], p.result);
+    const r = calcHits(Array.isArray(p.proposals) ? p.proposals : [], p.result);
     return acc + (r?.total || 0);
   }, 0);
   const globalRate = globalTotal > 0 ? Math.round((globalHits / globalTotal) * 100) : null;
@@ -625,7 +659,7 @@ export default function Pronostics() {
         ) : (
           <div className="space-y-1">
             {historyEntries.map((p: any) => {
-              const entryProposals: Proposal[] = p.proposals || [];
+              const entryProposals: Proposal[] = Array.isArray(p.proposals) ? p.proposals : [];
               const pronoDuJour = entryProposals.find((x) => x.id === 'prono_du_jour');
               const llm = entryProposals.filter((x) => !x.id.startsWith('hist_') && x.source !== 'consensus_v1');
               const consensus = entryProposals.filter((x) => x.source === 'consensus_v1');
@@ -688,30 +722,39 @@ export default function Pronostics() {
                         <div className="px-3 pb-3 pt-2 space-y-3" style={{ borderTop: '1px solid var(--border)' }}>
 
                           {/* Arrivée officielle (priorité si disponible) */}
-                          {p.result?.arrivalOrder && (
-                            <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wide"
-                                style={{ color: 'var(--text-faint)' }}>
-                                Arrivée officielle
-                              </span>
-                              <div className="flex flex-wrap gap-1.5 mt-1">
-                                {(p.result.arrivalOrder as number[]).map((n: number, i: number) => {
-                                  const hit = pronoDuJour?.nums.includes(n);
-                                  return (
-                                    <span key={n}
+                          {p.result?.arrivalOrder && (() => {
+                            const ev = pronosticCoverage(entryProposals, p.result.arrivalOrder);
+                            return (
+                              <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide"
+                                    style={{ color: 'var(--text-faint)' }}>
+                                    Arrivée officielle
+                                  </span>
+                                  {ev.arrivalSize > 0 && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded"
+                                      style={{ background: '#10B98120', color: '#10B981' }}>
+                                      Meilleure combi : {ev.bestHits}/{ev.arrivalSize}
+                                      {ev.bestHits === ev.arrivalSize ? ' ✓' : ''}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex flex-wrap gap-1.5">
+                                  {ev.horseCoverage.map((h, i) => (
+                                    <span key={h.num}
                                       className="text-xs tabular-nums font-bold px-2 py-0.5 rounded"
                                       style={{
-                                        background: hit ? '#10B98120' : 'var(--bg-hover)',
-                                        color: hit ? '#10B981' : 'var(--text-muted)',
-                                        border: `1px solid ${hit ? '#10B981' : 'var(--border)'}`,
+                                        background: h.inBest ? '#10B98120' : 'var(--bg-hover)',
+                                        color: h.inBest ? '#10B981' : 'var(--text-muted)',
+                                        border: `1px solid ${h.inBest ? '#10B981' : 'var(--border)'}`,
                                       }}>
-                                      {i + 1}. {n}{hit ? ' ✓' : ''}
+                                      {i + 1}. {h.num}{h.inBest ? ' ✓' : ''}
                                     </span>
-                                  );
-                                })}
+                                  ))}
+                                </div>
                               </div>
-                            </div>
-                          )}
+                            );
+                          })()}
 
                           <SelectionSummary proposal={pronoDuJour} />
                           {consensus.length > 0 && (

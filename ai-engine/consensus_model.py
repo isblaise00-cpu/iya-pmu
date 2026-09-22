@@ -59,7 +59,9 @@ def _odds_points(odds: dict[int, float]) -> dict[int, float]:
 def build_pronostic(data: dict) -> dict:
     """Valide l'extraction et ajoute les propositions calculées à ses données."""
     race = data.get("race", {})
-    size = race_size(race.get("type", ""))
+    # Pronostics always cover 5 horses regardless of race type (TIERCE/QUARTE/4+1).
+    # Subscribers always need a 5-horse combination to cover all variants.
+    size = 5
     horses = data.get("horses")
     if not isinstance(horses, list) or not horses:
         raise ValueError("Liste des chevaux absente du programme.")
