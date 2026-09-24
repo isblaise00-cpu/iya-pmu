@@ -52,7 +52,7 @@ def extract_pdf_signals(text: str) -> tuple[dict, list]:
     if not header:
         raise ValueError("Tableau des partants introuvable dans le PDF.")
     section = text[header.end():]
-    token = r"(?:\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?|N/?P|[-–—])"
+    token = r"(?:\d+(?:[.,]\d+)?\s*/\s*\d+(?:[.,]\d+)?|N\.?/?P\.?O?\.?|[-–—])"
     row = re.compile(rf"^\s*(\d{{1,2}})\s+.+?\s+({token})\s+({token})\s*$", re.I)
     partner_row = re.compile(r"^\s*([^\d:\n]{2,70}?)\s+(\d{1,2}(?:\s*[-–—]\s*\d{1,2}){4,})\s*$")
     odds = {}
@@ -147,6 +147,6 @@ async def analyze_pdf(pdf_path: str) -> dict:
         raise ValueError("Les chevaux extraits ne correspondent pas au tableau des cotes.")
     for horse in horses:
         horse.update(odds[horse["num"]])
-        if any(str(horse[key]).upper() in ("NP", "N/P") for key in ("cote_pt", "cote_tm")):
+        if any(re.sub(r'[./]', '', str(horse[key]).upper()) in ("NP", "NPO") for key in ("cote_pt", "cote_tm")):
             horse["non_partant"] = True
     return {"race": data["race"], "horses": horses, "partner_predictions": partners}
