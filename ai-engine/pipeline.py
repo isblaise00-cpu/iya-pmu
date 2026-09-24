@@ -10,6 +10,7 @@ from lonab import fetch_today_pmub_pdf
 from analyzer import analyze_pdf
 from consensus_model import build_pronostic
 from database import AsyncSessionLocal, Race, Pronostic, Result
+from results import race_type_from_date
 
 JOBS: dict[str, dict] = {}
 _LOCK = asyncio.Lock()
@@ -66,6 +67,11 @@ async def _run(job_id: str, force: bool):
             # d'anciennes courses affichés dans le document.
             if "race" in data:
                 data["race"]["date"] = today.isoformat()
+
+            # Forcer le type de course depuis le jour de la semaine (plus fiable que le LLM)
+            correct_type = race_type_from_date(today)
+            if "race" in data:
+                data["race"]["type"] = correct_type
 
             _upd(job_id, step="model", progress=65,
                  message="Classement des sept meilleurs chevaux et calcul des vingt groupes...")
