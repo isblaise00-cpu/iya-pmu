@@ -80,7 +80,12 @@ All `/api/*` routes are mounted with `authenticate` middleware in [backend/src/i
 
 ### SMS adapter pattern
 
-[backend/src/adapters/sms.adapter.ts](backend/src/adapters/sms.adapter.ts) exposes a single `smsAdapter` instance chosen at module-load time from `SMS_PROVIDER` (`mock | orange | twilio`). The README also lists `vonage` but no Vonage class exists — adding one means a new class implementing `SmsAdapter` plus a case in `createSmsAdapter()`. Mock logs to console only.
+[backend/src/adapters/sms.adapter.ts](backend/src/adapters/sms.adapter.ts) exposes a single `smsAdapter` instance chosen at module-load time from `SMS_PROVIDER` (`mock | orange | twilio | smpp`). Mock logs to console only.
+
+**SMPP adapter (ONatel Burkina Faso) — configuration validée le 04/10/2026 :**
+- `SMS_PROVIDER=smpp`, `SMPP_HOST`, `SMPP_PORT`, `SMPP_LOGIN`, `SMPP_PASSWORD`, `SMS_SENDER=IYA`
+- Paramètres `submit_sm` figés et testés : `source_addr_ton=5` (alphanumérique), `dest_addr_ton=1`/`npi=1` (E.164), numéro sans `+`, `data_coding` auto (0=GSM7 / 8=UCS2), `registered_delivery=1`
+- **Ne pas modifier ces paramètres** — tout changement casse la livraison. Voir le bloc de commentaires dans le fichier source.
 
 Inbound SMS commands (`PRONO`, `RESULTAT`, `SOLDE`, `AIDE`) are handled in [`handleIncomingSms`](backend/src/services/sms.service.ts) — note this is **not currently wired to a webhook route**; if a provider needs to deliver inbound SMS, you'll need to add the route yourself.
 
