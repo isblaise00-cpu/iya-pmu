@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from lonab import fetch_today_pmub_pdf
 from analyzer import analyze_pdf
-from consensus_model import build_pronostic
+from consensus_model import build_pronostic, build_pronostic_degraded
 from database import AsyncSessionLocal, Race, Pronostic, Result
 from results import race_type_from_date
 
@@ -75,7 +75,13 @@ async def _run(job_id: str, force: bool):
 
             _upd(job_id, step="model", progress=65,
                  message="Classement des sept meilleurs chevaux et calcul des vingt groupes...")
-            data = build_pronostic(data)
+            try:
+                data = build_pronostic(data)
+                logger.info("Pronostic généré en mode strict.")
+            except ValueError as strict_err:
+                logger.warning(f"Mode strict échoué ({strict_err}) — tentative en mode dégradé...")
+                data = build_pronostic_degraded(data)
+                logger.info("Pronostic généré en mode dégradé.")
 
             _upd(job_id, step="persist", progress=85, message="Sauvegarde du pronostic...")
             race_id, prono_id = await _persist(data, today, pdf_info)

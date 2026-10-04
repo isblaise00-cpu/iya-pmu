@@ -53,6 +53,95 @@ async function main() {
     await prisma.setting.upsert({ where: { key: s.key }, update: {}, create: s });
   }
 
+  // Modèles SMS
+  const smsTemplates = [
+    {
+      name: 'Bienvenue nouvel abonné',
+      category: 'bienvenue',
+      message: `Bienvenue sur IYA PMU!
+Envoyez au 3524:
+P:Prono du jour
+N:Num Fetiche
+C:Couple
+TOP:Top 4
+F:Favoris presse
+R:Regret
+CB:Combinaisons
+CE:Chvx eviter
+RESULTAT:Arrivee
+SOLDE:Jours restants
+Bonne chance!`,
+    },
+    {
+      name: 'Rappel prono disponible',
+      category: 'prono',
+      message: `IYA PMU - Prono disponible!
+Envoyez P au 3524 pour
+votre pronostic du jour.
+Autres commandes:
+N=NumFetiche C=Couple
+TOP=Top4 F=Favoris
+CB=Combis CE=Eviter
+AIDE pour tout voir.`,
+    },
+    {
+      name: 'Campagne promotion',
+      category: 'promotion',
+      message: `On parle plus trop! Abonnez-
+vous a IYA PMU et jouez avec
+nos infos LONAB. Envoyez vite
+au 3524:
+P:Prono  N:Num Fetiche
+C:Couple  TOP:Top4
+F:Favoris  R:Regret
+CB:Combis  CE:Chvx eviter
+RESULTAT  SOLDE  AIDE`,
+    },
+    {
+      name: 'Résultats disponibles',
+      category: 'resultat',
+      message: `IYA PMU - Resultats disponibles!
+Envoyez RESULTAT au 3524
+pour voir l'arrivee du jour.
+Demain un nouveau prono
+vous attend. Envoyez P
+pour le recevoir.`,
+    },
+    {
+      name: 'Alerte expiration abonnement',
+      category: 'expiration',
+      message: `Attention! Votre abonnement
+IYA PMU expire bientot.
+Renouvelez maintenant pour
+continuer a recevoir vos
+pronostics quotidiens LONAB.
+Contactez-nous rapidement.`,
+    },
+    {
+      name: 'Menu commandes complet',
+      category: 'general',
+      message: `IYA PMU - VOS COMMANDES:
+P:Prono#1  R:Regret#2
+CB1:Combis 2-6
+CB2:Combis 7-11
+CB3:Combis 12-16
+CB4:Combis 17-20
+SCORE:Classement 7 chvx
+N:Num Fetiche
+C:Couple  TOP:Top4
+F:Favoris  CE:Eviter
+RESULTAT  SOLDE  AIDE`,
+    },
+  ];
+
+  for (const tpl of smsTemplates) {
+    const existing = await prisma.smsTemplate.findFirst({ where: { name: tpl.name } });
+    if (!existing) {
+      await prisma.smsTemplate.create({ data: tpl });
+    }
+  }
+  console.log('SMS templates seeded');
+
   // Super admin
   const superAdminHash = await bcrypt.hash('azertyuiop', 12);
   await prisma.user.upsert({

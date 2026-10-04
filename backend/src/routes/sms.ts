@@ -91,6 +91,54 @@ router.get('/logs', async (req: Request, res: Response) => {
   }
 });
 
+// ── Modèles SMS ───────────────────────────────────────────────────────────────
+
+router.get('/templates', async (_req: Request, res: Response) => {
+  try {
+    const templates = await prisma.smsTemplate.findMany({ orderBy: { createdAt: 'desc' } });
+    res.json(templates);
+  } catch (err) {
+    logger.error('GET /sms/templates error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.post('/templates', async (req: Request, res: Response) => {
+  try {
+    const { name, category = 'general', message } = req.body;
+    if (!name || !message) return res.status(400).json({ error: 'name et message requis' });
+    const template = await prisma.smsTemplate.create({ data: { name, category, message } });
+    res.status(201).json(template);
+  } catch (err) {
+    logger.error('POST /sms/templates error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.put('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    const { name, category, message } = req.body;
+    const template = await prisma.smsTemplate.update({
+      where: { id: Number(req.params.id) },
+      data: { name, category, message },
+    });
+    res.json(template);
+  } catch (err) {
+    logger.error('PUT /sms/templates/:id error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+router.delete('/templates/:id', async (req: Request, res: Response) => {
+  try {
+    await prisma.smsTemplate.delete({ where: { id: Number(req.params.id) } });
+    res.json({ success: true });
+  } catch (err) {
+    logger.error('DELETE /sms/templates/:id error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/receive', async (req: Request, res: Response) => {
   try {
     const { from, body } = req.body;

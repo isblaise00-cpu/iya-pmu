@@ -18,6 +18,8 @@ import smsRouter from './routes/sms';
 import dashboardRouter from './routes/dashboard';
 import settingsRouter from './routes/settings';
 import sportsRouter from './routes/sports';
+import { smsAdapter } from './adapters/sms.adapter';
+import { handleIncomingSms } from './services/sms.service';
 
 const app = express();
 
@@ -35,6 +37,26 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date()
 
 // Public auth routes
 app.use('/api/auth', authRouter);
+
+// ── Webhook SMS public — ONatel envoie sans token ─────────────────────────────
+// URL à configurer chez ONatel : POST https://votre-domaine.com/api/sms/webhook
+// Champs attendus (ONatel HTTP) : from / msisdn / sender + text / body / message
+app.post('/api/sms/webhook', async (req, res) => {
+  try {
+    const phone: string = req.body.from || req.body.msisdn || req.body.sender || '';
+    const body: string  = req.body.text || req.body.body  || req.body.message || '';
+    if (phone && body) {
+      // Traitement asynchrone — on répond 200 immédiatement pour éviter les retries
+      handleIncomingSms(phone, body).catch((err: Error) =>
+        logger.error('[Webhook SMS] Erreur traitement:', err.message)
+      );
+    }
+  } catch (err) {
+    logger.error('[Webhook SMS] Erreur:', err);
+  }
+  // Toujours 200 pour éviter les renvois côté opérateur
+  res.json({ status: 'ok' });
+});
 
 // Protected routes
 app.use('/api/users', usersRouter);
@@ -54,6 +76,14 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 
 app.listen(env.PORT, () => {
   logger.info(`Backend API running on http://0.0.0.0:${env.PORT}`);
+
+  // ── Handler SMS entrants via SMPP (deliver_sm) ───────────────────────────
+  if (smsAdapter.onInbound) {
+    smsAdapter.onInbound((phone, body) =>
+      handleIncomingSms(phone, body).then(() => {})
+    );
+    logger.info('[SMS] Handler SMS entrant (SMPP deliver_sm) actif.');
+  }
 });
 
 export default app;

@@ -136,15 +136,23 @@ async def analyze_pdf(pdf_path: str) -> dict:
     text = _extract_text(pdf_path)
     odds, partners = extract_pdf_signals(text)
     provider = os.getenv("AI_PROVIDER", "anthropic").lower()
-    if provider == "mock":
+
+    # Tentative LLM ; repli automatique sur mock si échec ou mismatch
+    data = None
+    if provider != "mock":
+        try:
+            data = await (_analyze_groq(text) if provider == "groq" else _analyze_anthropic(text))
+            if {h.get("num") for h in data.get("horses", [])} != set(odds):
+                logger.warning("Mismatch LLM/cotes — repli sur l'extraction par cotes.")
+                data = None
+        except Exception as exc:
+            logger.warning(f"Extraction LLM échouée ({exc}) — repli sur l'extraction par cotes.")
+            data = None
+
+    if data is None:
         data = _analyze_mock(text, odds)
-    elif provider == "groq":
-        data = await _analyze_groq(text)
-    else:
-        data = await _analyze_anthropic(text)
+
     horses = data.get("horses", [])
-    if {h.get("num") for h in horses} != set(odds):
-        raise ValueError("Les chevaux extraits ne correspondent pas au tableau des cotes.")
     for horse in horses:
         horse.update(odds[horse["num"]])
         if any(re.sub(r'[./]', '', str(horse[key]).upper()) in ("NP", "NPO") for key in ("cote_pt", "cote_tm")):

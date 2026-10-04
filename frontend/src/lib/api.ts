@@ -62,11 +62,17 @@ export const createPlan = (data: any) => api.post('/plans', data).then((r) => r.
 export const updatePlan = (id: number, data: any) => api.put(`/plans/${id}`, data).then((r) => r.data);
 export const deletePlan = (id: number) => api.delete(`/plans/${id}`).then((r) => r.data);
 
-// SMS
+// SMS — Campagnes
 export const getSmsCampaigns = () => api.get('/sms/campaigns').then((r) => r.data);
 export const createSmsCampaign = (data: any) => api.post('/sms/campaigns', data).then((r) => r.data);
 export const sendSmsCampaign = (id: number) => api.post(`/sms/campaigns/${id}/send`).then((r) => r.data);
 export const getSmsLogs = (params?: any) => api.get('/sms/logs', { params }).then((r) => r.data);
+
+// SMS — Modèles
+export const getSmsTemplates = () => api.get('/sms/templates').then((r) => r.data);
+export const createSmsTemplate = (data: any) => api.post('/sms/templates', data).then((r) => r.data);
+export const updateSmsTemplate = (id: number, data: any) => api.put(`/sms/templates/${id}`, data).then((r) => r.data);
+export const deleteSmsTemplate = (id: number) => api.delete(`/sms/templates/${id}`).then((r) => r.data);
 
 // Dashboard
 export const getDashboardStats = () => api.get('/dashboard/stats').then((r) => r.data);

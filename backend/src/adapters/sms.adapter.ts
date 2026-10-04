@@ -17,6 +17,8 @@ export interface SmsResult {
 export interface SmsAdapter {
   send(msg: SmsMessage): Promise<SmsResult>;
   sendBulk(messages: SmsMessage[]): Promise<SmsResult[]>;
+  /** Optionnel — SMPP uniquement. Enregistre un handler pour les SMS entrants (deliver_sm). */
+  onInbound?: (handler: (phone: string, body: string) => Promise<any>) => void;
 }
 
 class MockSmsAdapter implements SmsAdapter {
@@ -90,6 +92,14 @@ class SmppSmsAdapter implements SmsAdapter {
   private password = process.env.SMPP_PASSWORD!;
   private sender   = process.env.SMS_SENDER || 'IYA';
   private session: any = null;
+  private inboundHandler: ((phone: string, body: string) => Promise<any>) | null = null;
+
+  /** Enregistre le handler appelé à la réception d'un SMS entrant (deliver_sm). */
+  onInbound(handler: (phone: string, body: string) => Promise<any>): void {
+    this.inboundHandler = handler;
+    logger.info('[SMPP] Handler SMS entrant enregistré.');
+    // Si la session est déjà ouverte, le handler sera utilisé dès la prochaine deliver_sm.
+  }
 
   private connect(): Promise<any> {
     return new Promise((resolve, reject) => {
@@ -106,6 +116,42 @@ class SmppSmsAdapter implements SmsAdapter {
       }, (pdu: any) => {
         if (pdu.command_status === 0) {
           logger.info('[SMPP] Connexion et authentification réussies.');
+
+          // ── SMS entrants (MO — Mobile Originated) ──────────────────────────
+          session.on('deliver_sm', (dpdu: any) => {
+            // Accusé de réception immédiat (obligatoire SMPP)
+            session.send(dpdu.response());
+
+            // ── Filtrage des delivery reports ───────────────────────────────
+            // esm_class bit 2 (0x04) = SMSC Delivery Receipt
+            // Sans ce filtre, chaque SMS envoyé génère un deliver_sm de rapport
+            // que le handler interprète comme une commande → boucle infinie.
+            const esmClass: number = dpdu.esm_class ?? 0;
+            if (esmClass & 0x04) {
+              logger.debug(`[SMPP] Delivery report reçu (esm_class=0x${esmClass.toString(16)}), ignoré.`);
+              return;
+            }
+
+            const sourceAddr = String(dpdu.source_addr || '');
+            const phone = sourceAddr.startsWith('+') ? sourceAddr : '+' + sourceAddr;
+            const raw = dpdu.short_message;
+            const body: string = typeof raw === 'string' ? raw : (raw?.message ?? '');
+
+            // Double sécurité : format texte typique des delivery reports ("id:XXXX sub:001 dlvrd:...")
+            if (/^id:[0-9A-Za-z]/i.test(body.trim())) {
+              logger.debug(`[SMPP] Delivery report textuel ignoré: ${body.slice(0, 60)}`);
+              return;
+            }
+
+            logger.info(`[SMPP] SMS entrant de ${phone}: "${body}"`);
+
+            if (body && this.inboundHandler) {
+              this.inboundHandler(phone, body).catch((err: Error) => {
+                logger.error('[SMPP] Erreur traitement SMS entrant:', err.message);
+              });
+            }
+          });
+
           resolve(session);
         } else {
           reject(new Error(`SMPP bind échoué — status: ${pdu.command_status}`));

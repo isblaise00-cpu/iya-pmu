@@ -88,6 +88,17 @@ model Result {
   @@map("results")
 }
 
+model SmsTemplate {
+  id        Int      @id @default(autoincrement())
+  name      String
+  category  String   @default("general")
+  message   String   @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("sms_templates")
+}
+
 model SmsCampaign {
   id        Int            @id @default(autoincrement())
   name      String
