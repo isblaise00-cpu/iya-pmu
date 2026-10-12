@@ -20,6 +20,7 @@ import settingsRouter from './routes/settings';
 import sportsRouter from './routes/sports';
 import { smsAdapter } from './adapters/sms.adapter';
 import { handleIncomingSms } from './services/sms.service';
+import paymentsRouter from './routes/payments';
 
 const app = express();
 
@@ -37,6 +38,10 @@ app.get('/health', (_req, res) => res.json({ status: 'ok', timestamp: new Date()
 
 // Public auth routes
 app.use('/api/auth', authRouter);
+
+// ── Webhook paiement ONatel — public ─────────────────────────────────────────
+// URL à transmettre à ONatel : POST https://[domaine]/api/payments/webhook/onatel
+app.use('/api/payments', paymentsRouter);
 
 // ── Webhook SMS public — ONatel envoie sans token ─────────────────────────────
 // URL à configurer chez ONatel : POST https://votre-domaine.com/api/sms/webhook
