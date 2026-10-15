@@ -86,7 +86,7 @@ async function _run(jobId: string, force: boolean) {
       }
     }
 
-    upd(jobId, { status: 'running', step: 'generate', progress: 20, message: 'Génération du pronostic via Gambler API...' });
+    upd(jobId, { status: 'running', step: 'generate', progress: 20, message: 'Génération du pronostic via THERACING API...' });
 
     const url = gamblerUrl();
     if (!url) throw new Error('GAMBLER_API_URL non configurée.');

@@ -72,7 +72,7 @@ async function _run(jobId: string, sport: string, force: boolean) {
       await _deleteToday(sport, today, tomorrow);
     }
 
-    upd(jobId, { status: 'running', step: 'generate', progress: 20, message: `Génération ${sport} via Gambler API...` });
+    upd(jobId, { status: 'running', step: 'generate', progress: 20, message: `Génération ${sport} via THERACING API...` });
 
     const url = gamblerUrl();
     if (!url) throw new Error('GAMBLER_API_URL non configurée.');
