@@ -2,12 +2,11 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendSportPronosticToActiveSubscribers } from '../services/sms.service';
 import { logger } from '../lib/logger';
-import { env } from '../lib/env';
-import axios from 'axios';
+import { startSportsPipeline, getSportsJob } from '../services/sports-pipeline.service';
 
 const router = Router();
 
-const VALID_SPORTS = ['FOOTBALL', 'BASKETBALL'];
+const VALID_SPORTS = ['FOOTBALL'];
 
 function validateSport(sport: string, res: Response): string | null {
   const s = sport.toUpperCase();
@@ -19,7 +18,6 @@ function validateSport(sport: string, res: Response): string | null {
 }
 
 // ── GET /:sport/today ────────────────────────────────────────────────────────
-// Doit être avant /:sport/:id pour que "today" ne soit pas interprété comme un id
 router.get('/:sport/today', async (req: Request, res: Response) => {
   const sport = validateSport(req.params.sport, res);
   if (!sport) return;
@@ -44,15 +42,11 @@ router.post('/:sport/scrape/start', async (req: Request, res: Response) => {
   if (!sport) return;
   try {
     const force = req.query.force === 'true' || req.body?.force === true;
-    const response = await axios.post(
-      `${env.AI_ENGINE_URL}/sports/${sport.toLowerCase()}/pipeline/start?force=${force}`,
-      {},
-      { timeout: 10_000 },
-    );
-    res.json(response.data);
+    const jobId = startSportsPipeline(sport, force);
+    res.json({ jobId });
   } catch (err: any) {
     logger.error(`POST /sports/${req.params.sport}/scrape/start error:`, err);
-    res.status(502).json({ error: 'Impossible de joindre le moteur IA', detail: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -60,17 +54,9 @@ router.post('/:sport/scrape/start', async (req: Request, res: Response) => {
 router.get('/:sport/scrape/job/:jobId', async (req: Request, res: Response) => {
   const sport = validateSport(req.params.sport, res);
   if (!sport) return;
-  try {
-    const response = await axios.get(
-      `${env.AI_ENGINE_URL}/sports/${sport.toLowerCase()}/pipeline/job/${req.params.jobId}`,
-      { timeout: 5_000 },
-    );
-    res.json(response.data);
-  } catch (err: any) {
-    if (err.response?.status === 404) return res.status(404).json({ error: 'Job introuvable' });
-    logger.error(`GET /sports/${req.params.sport}/scrape/job error:`, err);
-    res.status(502).json({ error: 'Impossible de joindre le moteur IA', detail: err.message });
-  }
+  const job = getSportsJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job introuvable' });
+  res.json(job);
 });
 
 // ── GET /:sport ──────────────────────────────────────────────────────────────

@@ -2,8 +2,7 @@ import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
 import { sendPronosticToActiveSubscribers } from '../services/sms.service';
 import { logger } from '../lib/logger';
-import { env } from '../lib/env';
-import axios from 'axios';
+import { startPipeline, getJob } from '../services/pipeline.service';
 
 const router = Router();
 
@@ -67,27 +66,18 @@ router.put('/:id', async (req: Request, res: Response) => {
 router.post('/scrape/start', async (req: Request, res: Response) => {
   try {
     const force = req.query.force === 'true' || req.body?.force === true;
-    const response = await axios.post(
-      `${env.AI_ENGINE_URL}/pipeline/start?force=${force}`, {}, { timeout: 10000 }
-    );
-    res.json(response.data);
+    const jobId = startPipeline(force);
+    res.json({ jobId });
   } catch (err: any) {
     logger.error('POST /pronostics/scrape/start error:', err);
-    res.status(502).json({ error: 'Impossible de joindre le moteur IA', detail: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
 router.get('/scrape/job/:jobId', async (req: Request, res: Response) => {
-  try {
-    const response = await axios.get(
-      `${env.AI_ENGINE_URL}/pipeline/job/${req.params.jobId}`, { timeout: 5000 }
-    );
-    res.json(response.data);
-  } catch (err: any) {
-    if (err.response?.status === 404) return res.status(404).json({ error: 'Job introuvable' });
-    logger.error('GET /pronostics/scrape/job/:jobId error:', err);
-    res.status(502).json({ error: 'Impossible de joindre le moteur IA', detail: err.message });
-  }
+  const job = getJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job introuvable' });
+  res.json(job);
 });
 
 router.post('/:id/send', async (req: Request, res: Response) => {

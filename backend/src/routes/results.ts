@@ -1,8 +1,7 @@
 import { Router, Request, Response } from 'express';
-import axios from 'axios';
 import { prisma } from '../lib/prisma';
 import { logger } from '../lib/logger';
-import { env } from '../lib/env';
+import { fetchAndSaveResults } from '../services/results-fetch.service';
 
 const router = Router();
 
@@ -21,18 +20,14 @@ router.get('/', async (_req: Request, res: Response) => {
 
 router.post('/fetch', async (_req: Request, res: Response) => {
   try {
-    const response = await axios.post(
-      `${env.AI_ENGINE_URL}/results/fetch`,
-      {},
-      { timeout: 120_000 },
-    );
-    res.json(response.data);
+    const result = await fetchAndSaveResults();
+    res.json(result);
   } catch (err: any) {
-    if (err.response?.status === 404) {
-      return res.status(404).json({ error: err.response.data?.detail || 'Résultats non disponibles' });
+    if (err.response?.status === 503 || err.message?.includes('introuvable') || err.message?.includes('Aucun')) {
+      return res.status(404).json({ error: err.message });
     }
     logger.error('POST /results/fetch error:', err);
-    res.status(502).json({ error: 'Impossible de récupérer les résultats', detail: err.message });
+    res.status(500).json({ error: 'Impossible de récupérer les résultats', detail: err.message });
   }
 });
 
