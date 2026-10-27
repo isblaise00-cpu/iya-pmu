@@ -139,6 +139,33 @@ router.delete('/templates/:id', async (req: Request, res: Response) => {
   }
 });
 
+router.post('/logs/:id/resend', async (req: Request, res: Response) => {
+  try {
+    const log = await prisma.smsLog.findUnique({
+      where: { id: Number(req.params.id) },
+      include: { subscriber: { select: { phone: true } } },
+    });
+    if (!log) return res.status(404).json({ error: 'Log introuvable' });
+    if (!log.subscriber?.phone) return res.status(400).json({ error: 'Abonné ou numéro introuvable' });
+
+    const result = await smsAdapter.send({ to: log.subscriber.phone, message: log.message });
+
+    await prisma.smsLog.update({
+      where: { id: log.id },
+      data: {
+        status: result.success ? 'SENT' : 'FAILED',
+        errorMessage: result.error ?? null,
+        sentAt: new Date(),
+      },
+    });
+
+    res.json({ success: result.success, error: result.error ?? null });
+  } catch (err: any) {
+    logger.error('POST /sms/logs/:id/resend error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 router.post('/receive', async (req: Request, res: Response) => {
   try {
     const { from, body } = req.body;

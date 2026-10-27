@@ -24,7 +24,36 @@ router.get('/', async (req: Request, res: Response) => {
       include: { plan: true },
       orderBy: { createdAt: 'desc' },
     });
-    res.json(subscribers);
+
+    // Pronostic du jour envoyé ?
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today.getTime() + 86_400_000);
+    const todayProno = await prisma.pronostic.findFirst({
+      where: { date: { gte: today, lt: tomorrow }, isSent: true },
+      select: { id: true },
+    });
+
+    // Si le prono du jour a été envoyé, on identifie qui l'a reçu via SmsLog
+    let receivedIds = new Set<number>();
+    if (todayProno) {
+      const logs = await prisma.smsLog.findMany({
+        where: {
+          status: 'SENT',
+          sentAt: { gte: today },
+          subscriberId: { not: null },
+        },
+        select: { subscriberId: true },
+      });
+      receivedIds = new Set(logs.map((l) => l.subscriberId!));
+    }
+
+    const result = subscribers.map((s) => ({
+      ...s,
+      todayPronosticId: todayProno?.id ?? null,
+      receivedTodayProno: todayProno ? receivedIds.has(s.id) : null,
+    }));
+
+    res.json(result);
   } catch (err) {
     logger.error('GET /subscribers error:', err);
     res.status(500).json({ error: 'Internal server error' });

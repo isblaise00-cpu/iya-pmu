@@ -113,8 +113,9 @@ async function _run(jobId: string, sport: string, force: boolean) {
     });
 
   } catch (err: any) {
-    logger.error(`[SportsPipeline:${sport}] Erreur:`, err.message);
-    upd(jobId, { status: 'error', message: `Erreur : ${err.message}`, error: err.message });
+    const msg = err.response?.data?.detail || err.response?.data?.error || err.message || String(err);
+    logger.error(`[SportsPipeline:${sport}] Erreur: ${msg}`);
+    upd(jobId, { status: 'error', message: `Erreur : ${msg}`, error: msg });
   }
 }
 

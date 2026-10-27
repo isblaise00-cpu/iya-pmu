@@ -18,11 +18,23 @@ async function getTodayPronostic() {
   });
 }
 
-/** Retourne les candidats classés depuis le prono principal (proposals[0].selection.candidates). */
-function getCandidates(prono: any): any[] {
-  const proposals = (prono.proposals as any[]) || [];
-  const main = proposals.find((p: any) => p.id === 'prono_du_jour') || proposals[0];
-  return (main?.selection?.candidates as any[]) || [];
+/** Retourne les chevaux triés par nombre de citations dans les 200 combinaisons.
+ *  Chaque élément : { num, nom, count } */
+function rankByFrequency(prono: any): { num: number; nom: string; count: number }[] {
+  const proposals: any[] = ((prono.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
+  const horses: any[] = (prono.horses as any[]) || [];
+  const freq = new Map<number, number>();
+  for (const p of proposals) {
+    for (const n of (p.nums as number[] || [])) {
+      freq.set(n, (freq.get(n) ?? 0) + 1);
+    }
+  }
+  return Array.from(freq.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(([num, count]) => {
+      const h = horses.find((x: any) => x.num === num);
+      return { num, nom: h?.nom ?? `No.${num}`, count };
+    });
 }
 
 /** Retourne le type de course formaté (ex: "4+1", "QUARTE", "TIERCE"). */
@@ -49,25 +61,16 @@ const COMMAND_ALIASES: Record<string, string> = {
   'P': 'PRONO', 'PRONO': 'PRONO',
   // Numéro fétiche
   'N': 'NUM', 'NUM': 'NUM',
-  // Couple (2 meilleurs)
+  // Couple (2 plus cités)
   'C': 'COUPLE', 'COUPLE': 'COUPLE',
-  // Top 4 candidats
+  // Top 4 plus cités
   'TOP': 'TOP', 'TOP4': 'TOP',
-  // Favoris presse
+  // Favoris cotes
   'F': 'FAVORIS', 'FAVORIS': 'FAVORIS', 'F8': 'FAVORIS',
   // Regret (combi #2)
   'R': 'REGRET', 'REGRET': 'REGRET',
-  // Combinaisons — 4 pages couvrant les 20 pronostics
-  // CB / CB1 → combis #2-#6   (proposals[1..5])
-  // CB2      → combis #7-#11  (proposals[6..10])
-  // CB3      → combis #12-#16 (proposals[11..15])
-  // CB4      → combis #17-#20 (proposals[16..19])
+  // Combinaisons — CB1 à CB40 (5 combis par page, 200 au total)
   'CB': 'COMBI_1', 'CB1': 'COMBI_1', 'COMBI': 'COMBI_1', 'COMB': 'COMBI_1',
-  'CB2': 'COMBI_2',
-  'CB3': 'COMBI_3',
-  'CB4': 'COMBI_4',
-  // Classement complet des 7 candidats avec scores
-  'SCORE': 'SCORE', 'SCORES': 'SCORE',
   // Chevaux à éviter
   'CE': 'EVITER', 'EVITER': 'EVITER',
   // Résultats
@@ -77,10 +80,27 @@ const COMMAND_ALIASES: Record<string, string> = {
   // Aide
   'AIDE': 'AIDE', 'HELP': 'AIDE', 'X': 'AIDE',
 };
+// CB2 à CB40 générés dynamiquement
+for (let i = 2; i <= 40; i++) COMMAND_ALIASES[`CB${i}`] = `COMBI_${i}`;
 
 async function resolveCommand(command: string, subscriber: any): Promise<string> {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const ds = format(today, 'dd/MM', { locale: fr });
+
+  // Handle COMBI_N dynamically (N = 1..40, 5 combis par page, 200 combis au total)
+  if (command.startsWith('COMBI_')) {
+    const prono = await getTodayPronostic();
+    if (!prono) return `Aucun prono disponible le ${ds}.`;
+    const proposals = ((prono.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
+    const page = parseInt(command.split('_')[1], 10);
+    const startIdx = (page - 1) * 5;
+    const slice = proposals.slice(startIdx, startIdx + 5);
+    if (!slice.length) return `Aucune combinaison disponible pour la page ${page}.`;
+    const from = startIdx + 1;
+    const to = startIdx + slice.length;
+    const lines = slice.map((p: any, i: number) => `${startIdx + i + 1}: ${(p.nums as number[]).join('-')}`);
+    return `${header('COMBIS', raceType(prono), ds)} (${from}-${to}):\n${lines.join('\n')}`;
+  }
 
   switch (command) {
 
@@ -94,45 +114,48 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
       return `${header('PRONO', raceType(prono), ds)}\n${(main.nums as number[]).join('-')}`;
     }
 
-    // ── Numéro fétiche ────────────────────────────────────────────────────────
+    // ── Numéro fétiche — cheval le plus cité sur les 200 combis ──────────────
     case 'NUM': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const candidates = getCandidates(prono);
-      if (!candidates.length) return 'Numero fetiche non disponible.';
-      const best = candidates[0];
-      return `${header('NUM FETICHE', raceType(prono), ds)}\nNo.${best.num} ${best.nom}`;
+      const ranked = rankByFrequency(prono);
+      if (!ranked.length) return 'Numero fetiche non disponible.';
+      const best = ranked[0];
+      return `${header('NUM FETICHE', raceType(prono), ds)}\nNo.${best.num} ${best.nom.split(' ')[0]} (${best.count} combis)`;
     }
 
-    // ── Couple (2 meilleurs candidats) ────────────────────────────────────────
+    // ── Couple — 2 chevaux les plus cités ────────────────────────────────────
     case 'COUPLE': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const candidates = getCandidates(prono);
-      if (candidates.length < 2) return 'Couple non disponible.';
-      const [a, b] = candidates;
+      const ranked = rankByFrequency(prono);
+      if (ranked.length < 2) return 'Couple non disponible.';
+      const [a, b] = ranked;
       return `${header('COUPLE', raceType(prono), ds)}\nNo.${a.num} ${a.nom.split(' ')[0]} + No.${b.num} ${b.nom.split(' ')[0]}`;
     }
 
-    // ── Top 4 candidats par score global ─────────────────────────────────────
+    // ── Top 4 — 4 chevaux les plus cités ─────────────────────────────────────
     case 'TOP': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const candidates = getCandidates(prono);
-      const top4 = candidates.slice(0, 4);
+      const ranked = rankByFrequency(prono);
+      const top4 = ranked.slice(0, 4);
       if (!top4.length) return 'Classement non disponible.';
-      const lines = top4.map((h: any, i: number) => `${i + 1}.No${h.num} ${h.nom.split(' ')[0]}`);
+      const lines = top4.map((h, i) => `${i + 1}.No${h.num} ${h.nom.split(' ')[0]} (${h.count})`);
       return `${header('TOP4', raceType(prono), ds)}\n${lines.join('\n')}`;
     }
 
-    // ── Favoris presse ────────────────────────────────────────────────────────
+    // ── Favoris — 4 chevaux avec les plus petites cotes ──────────────────────
     case 'FAVORIS': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const sorted = [...getCandidates(prono)].sort((a: any, b: any) => b.press_score - a.press_score);
-      const top4 = sorted.slice(0, 4);
-      if (!top4.length) return 'Favoris non disponibles.';
-      const lines = top4.map((h: any, i: number) => `${i + 1}.No${h.num} ${h.nom.split(' ')[0]}`);
+      const horses: any[] = (prono.horses as any[]) || [];
+      const sorted = [...horses]
+        .filter((h: any) => !h.non_partant && h.cote_pt)
+        .sort((a: any, b: any) => parseFloat(a.cote_pt) - parseFloat(b.cote_pt))
+        .slice(0, 4);
+      if (!sorted.length) return 'Favoris non disponibles.';
+      const lines = sorted.map((h: any, i: number) => `${i + 1}.No${h.num} ${h.nom.split(' ')[0]} (${h.cote_pt})`);
       return `${header('FAVORIS', raceType(prono), ds)}\n${lines.join('\n')}`;
     }
 
@@ -146,52 +169,19 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
       return `${header('REGRET', raceType(prono), ds)}\n${(regret.nums as number[]).join('-')}`;
     }
 
-    // ── Combinaisons — 4 pages couvrant les 20 pronostics ────────────────────
-    case 'COMBI_1':
-    case 'COMBI_2':
-    case 'COMBI_3':
-    case 'COMBI_4': {
-      const prono = await getTodayPronostic();
-      if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const proposals = (prono.proposals as any[]) || [];
-      const page     = parseInt(command.split('_')[1], 10); // 1, 2, 3 ou 4
-      const startIdx = 1 + (page - 1) * 5;                 // 1, 6, 11, 16
-      const slice    = proposals.slice(startIdx, startIdx + 5);
-      if (!slice.length) return `Aucune combinaison dans cette plage.`;
-      const from  = startIdx + 1;
-      const to    = startIdx + slice.length;
-      const lines = slice.map((p: any, i: number) =>
-        `${startIdx + i + 1}: ${(p.nums as number[]).join('-')}`
-      );
-      return `${header('COMBIS', raceType(prono), ds)} (${from}-${to}):\n${lines.join('\n')}`;
-    }
-
-    // ── Classement complet des 7 candidats avec scores ───────────────────────
-    case 'SCORE': {
-      const prono = await getTodayPronostic();
-      if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const candidates = getCandidates(prono);
-      if (!candidates.length) return 'Classement non disponible.';
-      const lines = candidates.map((h: any, i: number) =>
-        `${i + 1}.No${h.num} ${h.nom.split(' ')[0].substring(0, 8)} ${h.score}`
-      );
-      return `${header('SCORES', raceType(prono), ds)}\n${lines.join('\n')}`;
-    }
-
-    // ── Chevaux à éviter (non sélectionnés parmi les partants) ───────────────
+    // ── Chevaux à éviter — peu cités + longues cotes ─────────────────────────
     case 'EVITER': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const proposals = (prono.proposals as any[]) || [];
-      const main = proposals.find((p: any) => p.id === 'prono_du_jour') || proposals[0];
-      const selectedNums = new Set(
-        ((main?.selection?.candidates ?? []) as any[]).map((h: any) => h.num)
-      );
-      const allHorses = (prono.horses as any[]) || [];
-      const unselected = allHorses.filter((h: any) => !h.non_partant && !selectedNums.has(h.num));
-      if (!unselected.length) return `Tous les partants sont dans la selection le ${ds}.`;
-      const list = unselected.slice(0, 4)
-        .map((h: any) => `No.${h.num} ${h.nom.split(' ')[0]}`).join(', ');
+      const ranked = rankByFrequency(prono);
+      const topNums = new Set(ranked.slice(0, 5).map((h) => h.num));
+      const horses: any[] = (prono.horses as any[]) || [];
+      const toAvoid = [...horses]
+        .filter((h: any) => !h.non_partant && !topNums.has(h.num) && h.cote_pt)
+        .sort((a: any, b: any) => parseFloat(b.cote_pt) - parseFloat(a.cote_pt))
+        .slice(0, 4);
+      if (!toAvoid.length) return `Pas de chevaux a eviter identifies le ${ds}.`;
+      const list = toAvoid.map((h: any) => `No.${h.num} ${h.nom.split(' ')[0]}(${h.cote_pt})`).join(', ');
       return `EVITER ${ds}: ${list}`;
     }
 
@@ -215,12 +205,10 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
     case 'AIDE':
       return [
         'IYA PMU - COMMANDES:',
-        'P=Prono#1  R=Regret#2',
-        'CB1=Combis 2-6',
-        'CB2=Combis 7-11',
-        'CB3=Combis 12-16',
-        'CB4=Combis 17-20',
-        'SCORE=Classement 7 chvx',
+        'P=Prono du jour',
+        'R=Regret (2e combi)',
+        'CB1=Combis 1-5  CB2=6-10',
+        'CB3=11-15 ... CB40=196-200',
         'N=NumFetiche  C=Couple',
         'TOP=Top4  F=Favoris',
         'CE=Eviter  RESULTAT  SOLDE',
@@ -316,24 +304,77 @@ export async function sendPronosticToActiveSubscribers(pronosticId: number) {
   if (!pronostic) throw new Error('Pronostic not found');
 
   const templateSetting = await prisma.setting.findUnique({ where: { key: 'sms_default_prono' } });
+  const hippodrome = (pronostic.race as any)?.hippodrome ?? '';
+  const ds = format(pronostic.date, 'dd/MM/yyyy', { locale: fr });
 
-  const proposals = (pronostic.proposals as any[]) || [];
-  const pronoDuJour = proposals.find((p: any) => p.id === 'prono_du_jour') || proposals[0];
-  const nums = (pronoDuJour?.nums as number[] || []).join(' - ');
-  const confidence = pronoDuJour?.confidence ?? 0;
+  // Toutes les combinaisons disponibles (hors hist_)
+  const proposals = ((pronostic.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
+  if (!proposals.length) throw new Error('Aucune combinaison disponible');
+
+  const activeSubscribers = await prisma.subscriber.findMany({ where: { status: 'ACTIVE' } });
+
+  // Round-robin : chaque abonné reçoit une combinaison différente dans l'ordre
+  const results = await Promise.all(activeSubscribers.map((sub, i) => {
+    const combo = proposals[i % proposals.length];
+    const nums = (combo.nums as number[]).join(' - ');
+    const message = renderHippiqueSms(templateSetting?.value, { date: ds, hippodrome, nums });
+    return sendSmsToSubscriber(sub.id, message);
+  }));
+
+  await prisma.pronostic.update({ where: { id: pronosticId }, data: { isSent: true } });
+
+  const sent = results.filter((r) => r.success).length;
+  logger.info(`Pronostic envoyé (round-robin) à ${sent}/${activeSubscribers.length} abonnés`);
+  return { total: activeSubscribers.length, sent, failed: activeSubscribers.length - sent };
+}
+
+export async function sendPronosticToOneSubscriber(pronosticId: number, subscriberId: number) {
+  const pronostic = await prisma.pronostic.findUnique({
+    where: { id: pronosticId },
+    include: { race: true },
+  });
+  if (!pronostic) throw new Error('Pronostic introuvable');
+
+  const subscriber = await prisma.subscriber.findUnique({ where: { id: subscriberId } });
+  if (!subscriber) throw new Error('Abonné introuvable');
+
+  const templateSetting = await prisma.setting.findUnique({ where: { key: 'sms_default_prono' } });
+  const proposals = ((pronostic.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
+  const combo = proposals[0];
+  const nums = (combo?.nums as number[] || []).join(' - ');
   const hippodrome = (pronostic.race as any)?.hippodrome ?? '';
 
   const message = renderHippiqueSms(templateSetting?.value, {
     date: format(pronostic.date, 'dd/MM/yyyy', { locale: fr }),
-    hippodrome, nums, confidence, score: pronoDuJour?.score,
+    hippodrome, nums,
   });
+
+  const result = await sendSmsToSubscriber(subscriber.id, message);
+  return { success: result.success, error: result.error ?? null };
+}
+
+export async function sendResultToActiveSubscribers(resultId: number) {
+  const result = await (prisma.result as any).findUnique({
+    where: { id: resultId },
+    include: { pronostic: { include: { race: true } } },
+  });
+  if (!result) throw new Error('Arrivée introuvable');
+
+  const arrival: number[] = Array.isArray(result.arrivalOrder) ? result.arrivalOrder : [];
+  if (!arrival.length) throw new Error('Arrivée vide — impossible d\'envoyer');
+
+  const race = result.pronostic?.race;
+  const ds = format(result.date ?? new Date(), 'dd/MM/yyyy', { locale: fr });
+  const type = race?.raceType ? `${race.raceType} ` : '';
+  const message = `ARRIVEE ${type}${ds}:\n${arrival.join('-')}`;
 
   const activeSubscribers = await prisma.subscriber.findMany({ where: { status: 'ACTIVE' } });
   const results = await Promise.all(activeSubscribers.map((sub) => sendSmsToSubscriber(sub.id, message)));
-  await prisma.pronostic.update({ where: { id: pronosticId }, data: { isSent: true } });
+
+  await (prisma.result as any).update({ where: { id: resultId }, data: { isSent: true } });
 
   const sent = results.filter((r) => r.success).length;
-  logger.info(`Pronostic envoyé à ${sent}/${activeSubscribers.length} abonnés`);
+  logger.info(`Arrivée envoyée à ${sent}/${activeSubscribers.length} abonnés`);
   return { total: activeSubscribers.length, sent, failed: activeSubscribers.length - sent };
 }
 

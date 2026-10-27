@@ -81,6 +81,7 @@ model Result {
   date         DateTime   @default(now())
   arrivalOrder Json?
   source       String?
+  isSent       Boolean    @default(false)
   pronosticId  Int?       @unique
   pronostic    Pronostic? @relation(fields: [pronosticId], references: [id])
   createdAt    DateTime   @default(now())
@@ -102,7 +103,7 @@ model SmsTemplate {
 model SmsCampaign {
   id        Int            @id @default(autoincrement())
   name      String
-  message   String
+  message   String         @db.Text
   status    CampaignStatus @default(DRAFT)
   target    String         @default("all")
   sentAt    DateTime?
@@ -122,7 +123,7 @@ model SmsLog {
   id           Int          @id @default(autoincrement())
   subscriberId Int?
   subscriber   Subscriber?  @relation(fields: [subscriberId], references: [id])
-  message      String
+  message      String       @db.Text
   status       SmsLogStatus @default(PENDING)
   campaignId   Int?
   campaign     SmsCampaign? @relation(fields: [campaignId], references: [id])

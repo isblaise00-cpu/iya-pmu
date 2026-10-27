@@ -108,8 +108,11 @@ async function _run(jobId: string, force: boolean) {
     });
 
   } catch (err: any) {
-    logger.error('[Pipeline] Erreur:', err.message);
-    upd(jobId, { status: 'error', message: `Erreur : ${err.message}`, error: err.message });
+    const msg = err.response?.data?.detail || err.response?.data?.error || err.message
+      || (err.errors?.[0]?.message ? `${err.errors[0].message} (${err.errors[0].code})` : null)
+      || String(err);
+    logger.error(`[Pipeline] Erreur: ${msg}`);
+    upd(jobId, { status: 'error', message: `Erreur : ${msg}`, error: msg });
   }
 }
 
@@ -141,6 +144,11 @@ async function _persist(data: any, today: Date): Promise<{ raceId: number; prono
     race = await prisma.race.create({ data: { date: today, ...raceData } });
   }
 
+  // Attache partner_predictions au premier proposal pour le conserver côté frontend
+  const proposals = Array.isArray(data.proposals) ? data.proposals.map((p: any, i: number) =>
+    i === 0 ? { ...p, partner_predictions: data.partner_predictions ?? [] } : p
+  ) : null;
+
   // Upsert Pronostic
   const existingProno = await prisma.pronostic.findUnique({ where: { raceId: race.id } });
 
@@ -149,8 +157,8 @@ async function _persist(data: any, today: Date): Promise<{ raceId: number; prono
     pronostic = await prisma.pronostic.update({
       where: { id: existingProno.id },
       data: {
-        horses:          data.horses    ?? null,
-        proposals:       data.proposals ?? null,
+        horses:          data.horses ?? null,
+        proposals,
         commentary:      data.commentary ?? null,
         isSent:          false,
         modifiedByAdmin: false,
@@ -161,8 +169,8 @@ async function _persist(data: any, today: Date): Promise<{ raceId: number; prono
       data: {
         date:       today,
         raceId:     race.id,
-        horses:     data.horses    ?? null,
-        proposals:  data.proposals ?? null,
+        horses:     data.horses ?? null,
+        proposals,
         commentary: data.commentary ?? null,
       },
     });

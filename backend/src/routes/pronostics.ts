@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { sendPronosticToActiveSubscribers } from '../services/sms.service';
+import { sendPronosticToActiveSubscribers, sendPronosticToOneSubscriber } from '../services/sms.service';
 import { logger } from '../lib/logger';
 import { startPipeline, getJob } from '../services/pipeline.service';
 
@@ -86,6 +86,19 @@ router.post('/:id/send', async (req: Request, res: Response) => {
     res.json({ message: 'Pronostic envoyé', ...result });
   } catch (err: any) {
     logger.error('POST /pronostics/:id/send error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/:id/send-to/:subscriberId', async (req: Request, res: Response) => {
+  try {
+    const result = await sendPronosticToOneSubscriber(
+      Number(req.params.id),
+      Number(req.params.subscriberId),
+    );
+    res.json(result);
+  } catch (err: any) {
+    logger.error('POST /pronostics/:id/send-to/:subscriberId error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
