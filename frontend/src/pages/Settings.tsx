@@ -72,7 +72,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Paramètres</h1>
@@ -117,14 +117,11 @@ export default function SettingsPage() {
           <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--text-muted)' }}>
             SMS Pronostic du jour
             <span className="ml-2 font-normal" style={{ color: 'var(--text-faint)' }}>
-              {'{date}'} {'{hippodrome}'} {'{nums}'} {'{score}'}
+              variables : {'{date}'} {'{hippodrome}'} {'{nums}'}
             </span>
           </label>
           <textarea value={form.sms_default_prono} onChange={set('sms_default_prono')}
             rows={5} className="input resize-none" />
-          <p className="text-xs" style={{ color: 'var(--text-faint)' }}>
-            Le score de sélection s’écrit {'{score}'}/100. Il ne représente pas une probabilité de réussite.
-          </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
             {form.sms_default_prono.length} car. · {Math.ceil(form.sms_default_prono.length / 160) || 0} SMS
           </p>
@@ -142,15 +139,22 @@ export default function SettingsPage() {
       <Section icon={Shield} title="Commandes SMS abonnés">
         <div className="space-y-0">
           {[
-            { cmd: 'PRONO', desc: 'Reçoit le pronostic du jour' },
-            { cmd: 'RESULTAT', desc: 'Reçoit le dernier résultat de course' },
-            { cmd: 'SOLDE', desc: 'Consulte les jours restants d\'abonnement' },
-            { cmd: 'AIDE', desc: 'Liste toutes les commandes disponibles' },
+            { cmd: 'P · PRONO',    desc: '1re combinaison du jour (le prono principal)' },
+            { cmd: 'R · REGRET',   desc: '2e combinaison (alternative)' },
+            { cmd: 'CB1 … CB40',   desc: '5 combinaisons par page — CB1 = combis 1-5, CB2 = 6-10, … CB40 = 196-200' },
+            { cmd: 'N · NUM',      desc: 'Cheval le plus cité sur les 200 combinaisons' },
+            { cmd: 'C · COUPLE',   desc: 'Les 2 chevaux les plus cités sur les 200 combinaisons' },
+            { cmd: 'TOP · TOP4',   desc: 'Les 4 chevaux les plus cités sur les 200 combinaisons' },
+            { cmd: 'F · FAVORIS',  desc: 'Les 4 chevaux avec les plus petites cotes PMU' },
+            { cmd: 'CE · EVITER',  desc: 'Chevaux peu cités et à longues cotes (à éviter)' },
+            { cmd: 'RESULTAT',     desc: 'Dernier résultat de course enregistré' },
+            { cmd: 'SOLDE',        desc: 'Jours restants et date d\'expiration d\'abonnement' },
+            { cmd: 'AIDE · HELP',  desc: 'Liste de toutes les commandes disponibles' },
           ].map(({ cmd, desc }) => (
-            <div key={cmd} className="flex items-center gap-4 py-2.5"
+            <div key={cmd} className="flex items-start gap-4 py-2.5"
               style={{ borderBottom: '1px solid var(--border)' }}>
-              <span className="font-mono text-xs px-2 py-1 rounded"
-                style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)', border: '1px solid var(--yellow)' }}>
+              <span className="font-mono text-xs px-2 py-1 rounded shrink-0"
+                style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)', border: '1px solid var(--yellow)', minWidth: 110 }}>
                 {cmd}
               </span>
               <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{desc}</span>

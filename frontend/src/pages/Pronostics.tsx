@@ -5,7 +5,7 @@ import { fr } from 'date-fns/locale';
 import { Play, Send, MapPin, Trophy, FileDown, ChevronDown, ChevronUp, Clock, Flag, TrendingUp, BarChart2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { getTodayRace, getPronostics, sendPronostic, startScrapingPipeline, getScrapingJob, fetchResults } from '../lib/api';
+import { getTodayRace, getPronostics, sendPronostic, startScrapingPipeline, getScrapingJob, fetchResults, sendResult } from '../lib/api';
 import { pronosticCoverage } from '../lib/pronostic-coverage';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -23,81 +23,44 @@ type Job = {
 
 type Horse = { num: number; nom: string; cote_pt: string; cote_tm: string };
 
+type PartnerPrediction = { source: string; nums: number[] };
+
 type Proposal = {
   id: string;
   title: string;
-  subtitle: string;
   nums: number[];
-  confidence?: number;
   score?: number;
   odds?: Record<string, string>;
-  source?: string;
+  partner_predictions?: PartnerPrediction[];
   selection?: {
-    candidates: { num: number; nom: string; press_score: number; odds_score: number; score: number; citations: number }[];
-    partners: { source: string; nums: number[] }[];
-    odds_columns: string[];
+    pool_size?: number;
     possible_combinations: number;
     generated_combinations: number;
+    partenaires?: number;
+    version?: string;
   };
 };
 
-const proposalScore = (p: Proposal) => p.score ?? p.confidence ?? 0;
-const scoreLabel = (p: Proposal) => p.score !== undefined ? `${p.score}/100` : `${p.confidence ?? 0}%`;
+const proposalScore = (p: Proposal) => p.score ?? 0;
+const scoreLabel = (p: Proposal) => p.score !== undefined ? `${p.score}x` : '-';
 
-function SelectionSummary({ proposal }: { proposal?: Proposal }) {
-  const selection = proposal?.selection;
-  if (!selection) return null;
-  return (
-    <div className="card p-4 space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Les sept chevaux sélectionnés</h3>
-        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-          Presse 70 % · Cotes 30 % · {selection.partners.length} partenaires · {selection.odds_columns.length} colonne(s) de cotes
-        </p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs text-left" style={{ color: 'var(--text)' }}>
-          <thead style={{ color: 'var(--text-muted)' }}><tr>
-            {['Rang', 'Cheval', 'Citations top 5', 'Presse /100', 'Cotes /100', 'Score /100'].map(label => <th key={label} className="py-2 pr-3">{label}</th>)}
-          </tr></thead>
-          <tbody>{selection.candidates.map((horse, index) => (
-            <tr key={horse.num} style={{ borderTop: '1px solid var(--border)' }}>
-              <td className="py-2 pr-3">{index + 1}</td>
-              <td className="py-2 pr-3 font-medium">{horse.num} · {horse.nom}</td>
-              <td className="py-2 pr-3">{horse.citations}/{selection.partners.length}</td>
-              <td className="py-2 pr-3">{horse.press_score}</td>
-              <td className="py-2 pr-3">{horse.odds_score}</td>
-              <td className="py-2 pr-3 font-bold">{horse.score}</td>
-            </tr>
-          ))}</tbody>
-        </table>
-      </div>
-      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        {selection.generated_combinations} groupes distincts sur {selection.possible_combinations} possibles parmi ces sept chevaux.
-        Objectif : retrouver les chevaux de l’arrivée en désordre. Les scores classent les sélections et ne sont pas des probabilités de réussite.
-      </p>
-      <details className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        <summary className="cursor-pointer">Voir les pronostics partenaires utilisés</summary>
-        <div className="mt-2 space-y-1">{selection.partners.map(partner => (
-          <p key={partner.source}><strong>{partner.source}</strong> : {partner.nums.join(' – ')}</p>
-        ))}</div>
-      </details>
-    </div>
-  );
-}
 
+// c est un lift (ex: 8.2x). Seuils : >=8x vert, >=4x jaune, sinon gris
 function confidenceColor(c: number): string {
-  if (c >= 70) return '#10B981';
-  if (c >= 50) return '#F59E0B';
+  if (c >= 8) return '#10B981';
+  if (c >= 4) return '#F59E0B';
   return '#6B7280';
 }
 
 function calcHits(proposals: Proposal[], result: any): { hits: number; total: number } | null {
-  const pronoDuJour = proposals.find((p) => p.id === 'prono_du_jour');
-  if (!pronoDuJour || !result?.arrivalOrder?.length) return null;
+  if (!proposals.length || !result?.arrivalOrder?.length) return null;
   const arrival: number[] = result.arrivalOrder;
-  const predicted = new Set(pronoDuJour.nums);
-  return { hits: arrival.filter((n) => predicted.has(n)).length, total: arrival.length };
+  let best = 0;
+  for (const p of proposals) {
+    const h = p.nums.filter((n) => arrival.includes(n)).length;
+    if (h > best) best = h;
+  }
+  return { hits: best, total: arrival.length };
 }
 
 // ── Modal pipeline ────────────────────────────────────────────────────────────
@@ -128,7 +91,7 @@ function ScrapingProgressModal({ open, jobId, onDone, onClose }:
   const pct = job?.progress ?? 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="Pipeline en cours" size="md">
+    <Modal open={open} onClose={onClose} title="Génération en cours" size="md">
       <div className="space-y-4 py-2">
         <div>
           <div className="flex justify-between mb-2">
@@ -147,7 +110,7 @@ function ScrapingProgressModal({ open, jobId, onDone, onClose }:
         </div>
         {job?.status === 'error' && (
           <div className="card p-3 text-sm" style={{ background: '#fee2e2', color: '#991b1b', borderColor: '#fecaca' }}>
-            <p className="font-medium mb-1">Erreur durant le pipeline</p>
+            <p className="font-medium mb-1">Erreur durant la génération</p>
             <p className="text-xs">{job.error}</p>
           </div>
         )}
@@ -166,73 +129,17 @@ function ScrapingProgressModal({ open, jobId, onDone, onClose }:
   );
 }
 
-// ── Carte pronostic LLM (compact) ─────────────────────────────────────────────
 
-function ProposalCard({ proposal, horses, featured = false }:
-  { proposal: Proposal; horses: Horse[]; featured?: boolean }) {
-  const color = confidenceColor(proposalScore(proposal));
-  const horseName = (n: number) => horses.find((h) => h.num === n)?.nom || '';
-
-  if (featured) {
-    return (
-      <div className="card p-4" style={{ borderColor: color, background: `${color}10` }}>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-wide" style={{ color }}>
-              {proposal.title}
-            </p>
-            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              {proposal.subtitle}
-            </p>
-          </div>
-          <span className="text-sm font-bold tabular-nums px-2.5 py-1 rounded-full"
-            style={{ background: `${color}22`, color }}>
-            {scoreLabel(proposal)}
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {proposal.nums.map((n, i) => (
-            <div key={n} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg"
-              style={{ background: `${color}18`, border: `1px solid ${color}40` }}>
-              <span className="text-[10px] font-bold" style={{ color }}>{i + 1}.</span>
-              <span className="text-base font-bold tabular-nums" style={{ color: 'var(--text)' }}>{n}</span>
-              {horseName(n) && (
-                <span className="text-[11px] max-w-[90px] truncate" style={{ color: 'var(--text-muted)' }}>
-                  {horseName(n)}
-                </span>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="card p-3 flex items-center gap-3" style={{ borderColor: 'var(--border)' }}>
-      <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-wide mb-1" style={{ color }}>
-          {proposal.title}
-        </p>
-        <p className="text-xs tabular-nums font-mono" style={{ color: 'var(--text)' }}>
-          {proposal.nums.join(' · ')}
-        </p>
-      </div>
-      <span className="text-xs font-bold tabular-nums shrink-0 px-2 py-0.5 rounded-full"
-        style={{ background: `${color}20`, color }}>
-        {scoreLabel(proposal)}
-      </span>
-    </div>
-  );
-}
 
 // ── 20 combinaisons historiques compactes ────────────────────────────────────
 
-function HistoricalCombinations({ proposals, title = 'Combinaisons modèle historique', result }: { proposals: Proposal[]; title?: string; result?: any }) {
+function HistoricalCombinations({ proposals, title = 'Combinaisons', result, defaultVisible = 20 }: { proposals: Proposal[]; title?: string; result?: any; defaultVisible?: number }) {
+  const [showAll, setShowAll] = useState(false);
   if (!proposals.length) return null;
-  const half = Math.ceil(proposals.length / 2);
-  const col1 = proposals.slice(0, half);
-  const col2 = proposals.slice(half);
+  const visible = showAll ? proposals : proposals.slice(0, defaultVisible);
+  const half = Math.ceil(visible.length / 2);
+  const col1 = visible.slice(0, half);
+  const col2 = visible.slice(half);
 
   // Trouver la combinaison qui couvre le plus de chevaux arrivants
   const official: number[] = Array.isArray(result?.arrivalOrder)
@@ -284,7 +191,7 @@ function HistoricalCombinations({ proposals, title = 'Combinaisons modèle histo
         </span>
         <div className="flex items-center gap-1 shrink-0">
           <div className="w-12 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-            <div className="h-full rounded-full" style={{ width: `${proposalScore(p)}%`, background: color }} />
+            <div className="h-full rounded-full" style={{ width: `${Math.min(proposalScore(p) * 5, 100)}%`, background: color }} />
           </div>
           <span className="text-[10px] tabular-nums text-right" style={{ color }}>
             {scoreLabel(p)}
@@ -310,6 +217,15 @@ function HistoricalCombinations({ proposals, title = 'Combinaisons modèle histo
           {col2.map((p, i) => <Row key={p.id} p={p} rank={half + i + 1} />)}
         </div>
       </div>
+      {proposals.length > defaultVisible && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="w-full py-2 text-xs font-medium transition-colors"
+          style={{ color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}
+        >
+          {showAll ? 'Réduire' : `Voir tout — ${proposals.length} combinaisons`}
+        </button>
+      )}
     </div>
   );
 }
@@ -360,12 +276,14 @@ function RaceHeader({ race }: { race: any }) {
 
 // ── Arrivée officielle ────────────────────────────────────────────────────────
 
-function ResultsSection({ result, horses, proposals, onFetch, isFetching }: {
+function ResultsSection({ result, horses, proposals, onFetch, isFetching, onSend, isSending }: {
   result: any | null;
   horses: Horse[];
   proposals: Proposal[];
   onFetch: () => void;
   isFetching: boolean;
+  onSend: () => void;
+  isSending: boolean;
 }) {
   const pronoDuJour = proposals.find((p) => p.id === 'prono_du_jour');
   const predictedSet = new Set<number>(pronoDuJour?.nums || []);
@@ -397,6 +315,17 @@ function ResultsSection({ result, horses, proposals, onFetch, isFetching }: {
             Récupérer les résultats
           </Button>
         )}
+        {result && !result.isSent && (
+          <Button icon={<Send size={13} />} loading={isSending} onClick={onSend}>
+            Envoyer aux abonnés
+          </Button>
+        )}
+        {result?.isSent && (
+          <span className="text-xs font-medium px-2 py-1 rounded-full"
+            style={{ background: '#10B98120', color: '#10B981' }}>
+            Arrivée envoyée
+          </span>
+        )}
       </div>
 
       {result ? (
@@ -426,7 +355,7 @@ function ResultsSection({ result, horses, proposals, onFetch, isFetching }: {
       ) : (
         <div className="px-4 py-3">
           <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Les résultats PMUB seront disponibles après la course.
+            Les résultats LONAB seront disponibles après la course. Cliquez sur « Récupérer les résultats » une fois la course terminée.
           </p>
         </div>
       )}
@@ -493,6 +422,15 @@ export default function Pronostics() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const sendResultMutation = useMutation({
+    mutationFn: (id: number) => sendResult(id),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['todayRace'] });
+      toast.success(`Arrivée envoyée à ${data.sent} abonné(s)`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const onPipelineDone = () => {
     setScrapingJob(null);
     qc.invalidateQueries({ queryKey: ['todayRace'] });
@@ -506,11 +444,7 @@ export default function Pronostics() {
   const horses: Horse[]      = Array.isArray(pronostic?.horses)    ? (pronostic!.horses   as Horse[])    : [];
   const proposals: Proposal[] = Array.isArray(pronostic?.proposals) ? (pronostic!.proposals as Proposal[]) : [];
 
-  // Sépare propositions IA et combinaisons modèle historique
-  const consensusProposals = proposals.filter((p) => p.source === 'consensus_v1');
-  const llmProposals  = proposals.filter((p) => !p.id.startsWith('hist_') && (p.source !== 'consensus_v1' || p.id === 'prono_du_jour'));
-  const histProposals = proposals.filter((p) =>  p.id.startsWith('hist_'));
-  const [featured, ...llmRest] = llmProposals;
+  const llmProposals = proposals.filter((p) => !p.id.startsWith('hist_'));
 
   // Calcul taux de succès global sur l'historique
   const historyEntries = (history as any[]).filter((p) => p.id !== pronostic?.id);
@@ -540,14 +474,14 @@ export default function Pronostics() {
               Envoyer aux abonnés
             </Button>
           )}
-          {!result && (
+          {!pronostic && (
             <Button
-              variant={race ? 'secondary' : 'primary'}
+              variant="primary"
               icon={<Play size={14} />}
               loading={startMutation.isPending}
-              onClick={() => startMutation.mutate(!!race)}
+              onClick={() => startMutation.mutate(false)}
             >
-              {race ? 'Régénérer' : 'Lancer le pipeline'}
+              Générer
             </Button>
           )}
         </div>
@@ -566,50 +500,15 @@ export default function Pronostics() {
             Aucun pronostic pour aujourd'hui
           </p>
           <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-            Cliquez sur « Lancer le pipeline » pour générer les pronostics.
+            Cliquez sur « Générer » pour générer les pronostics.
           </p>
         </div>
       ) : (
         <>
           <RaceHeader race={race} />
 
-          {/* Prono du jour — mis en avant */}
-          {featured && <ProposalCard proposal={featured} horses={horses} featured />}
-          <SelectionSummary proposal={featured} />
-          {consensusProposals.length > 0 && (
-            <HistoricalCombinations proposals={consensusProposals} title="Combinaisons en désordre · score /100" result={result} />
-          )}
-
-          {/* Autres propositions LLM en grille compacte */}
-          {llmRest.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {llmRest.map((p) => (
-                <ProposalCard key={p.id} proposal={p} horses={horses} />
-              ))}
-            </div>
-          )}
-
-          {/* Combinaisons modèle historique */}
-          {histProposals.length > 0 && (
-            <HistoricalCombinations proposals={histProposals} />
-          )}
-
-          {/* Analyse */}
-          {pronostic?.commentary && (
-            <div className="card p-4">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wide mb-2"
-                style={{ color: 'var(--text-muted)' }}>
-                Analyse
-              </h3>
-              <p className="text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
-                {pronostic.commentary}
-              </p>
-              <div className="flex items-center gap-3 mt-3">
-                {pronostic.modifiedByAdmin && <Badge status="PENDING" />}
-                {pronostic.isSent && <Badge status="SENT" />}
-              </div>
-            </div>
-          )}
+          {/* 200 combinaisons — 20 par défaut, meilleur match mis en avant si arrivée dispo */}
+          <HistoricalCombinations proposals={llmProposals} result={result} />
 
           {/* Arrivée officielle */}
           <ResultsSection
@@ -618,6 +517,8 @@ export default function Pronostics() {
             proposals={proposals}
             onFetch={() => resultsMutation.mutate()}
             isFetching={resultsMutation.isPending}
+            onSend={() => result?.id && sendResultMutation.mutate(result.id)}
+            isSending={sendResultMutation.isPending}
           />
         </>
       )}
@@ -661,8 +562,8 @@ export default function Pronostics() {
             {historyEntries.map((p: any) => {
               const entryProposals: Proposal[] = Array.isArray(p.proposals) ? p.proposals : [];
               const pronoDuJour = entryProposals.find((x) => x.id === 'prono_du_jour');
-              const llm = entryProposals.filter((x) => !x.id.startsWith('hist_') && x.source !== 'consensus_v1');
-              const consensus = entryProposals.filter((x) => x.source === 'consensus_v1');
+              const llm = entryProposals.filter((x) => !x.id.startsWith('hist_'));
+              const consensus: Proposal[] = [];
               const hist = entryProposals.filter((x) => x.id.startsWith('hist_'));
               const hitInfo = calcHits(entryProposals, p.result);
               const raceType = p.race?.raceType || '';
@@ -756,7 +657,6 @@ export default function Pronostics() {
                             );
                           })()}
 
-                          <SelectionSummary proposal={pronoDuJour} />
                           {consensus.length > 0 && (
                             <HistoricalCombinations proposals={consensus} title="Combinaisons en désordre · score /100" result={p.result} />
                           )}

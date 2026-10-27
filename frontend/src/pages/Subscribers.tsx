@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Plus, Search, Trash2, Receipt, Pencil, Ban, RotateCcw, UserX, X, ChevronDown } from 'lucide-react';
+import { Plus, Search, Trash2, Receipt, Pencil, Ban, RotateCcw, UserX, X, ChevronDown, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getSubscribers, getPlans, createSubscriber, updateSubscriber, deleteSubscriber, getSubscriberPayments } from '../lib/api';
+import { getSubscribers, getPlans, createSubscriber, updateSubscriber, deleteSubscriber, getSubscriberPayments, sendPronosticToSubscriber } from '../lib/api';
 import { formatXOF } from '../lib/format';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -178,6 +178,17 @@ export default function Subscribers() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const sendPronoMutation = useMutation({
+    mutationFn: ({ pronosticId, subscriberId }: { pronosticId: number; subscriberId: number }) =>
+      sendPronosticToSubscriber(pronosticId, subscriberId),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['subscribers'] });
+      if (data.success) toast.success('Pronostic envoyé');
+      else toast.error(`Échec envoi : ${data.error}`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const updateStatus = useMutation({
     mutationFn: ({ id, status }: { id: number; status: string }) => updateSubscriber(id, { status }),
     onSuccess: (_data, vars) => {
@@ -304,6 +315,18 @@ export default function Subscribers() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-0.5">
+                        {/* Bouton envoi prono : visible uniquement si le prono du jour a été envoyé globalement
+                            ET que cet abonné ne l'a pas encore reçu */}
+                        {s.todayPronosticId && s.receivedTodayProno === false && s.status === 'ACTIVE' && (
+                          <ActionButton
+                            onClick={() => sendPronoMutation.mutate({ pronosticId: s.todayPronosticId, subscriberId: s.id })}
+                            color="#10B981"
+                            title="Envoyer le prono du jour"
+                          >
+                            <Send size={14} />
+                          </ActionButton>
+                        )}
+
                         <ActionButton onClick={() => setPaymentsFor(s)} color="var(--text-muted)" title="Paiements">
                           <Receipt size={14} />
                         </ActionButton>

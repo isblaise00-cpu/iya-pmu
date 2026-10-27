@@ -11,12 +11,17 @@ import {
   startSportPipeline,
   getSportScrapingJob,
   sendSportPronostic,
+  getSportLeagues,
+  getSportMatches,
 } from '../lib/api';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
 import Modal from '../components/ui/Modal';
+import { X } from 'lucide-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+type League = { league_id: string; league_name: string; country: string; match_count: number };
 
 type SportJob = {
   id: string;
@@ -109,7 +114,7 @@ function ScrapingProgressModal({
   const pct = job?.progress ?? 0;
 
   return (
-    <Modal open={open} onClose={onClose} title="Pipeline en cours" size="md">
+    <Modal open={open} onClose={onClose} title="Génération en cours" size="md">
       <div className="space-y-4 py-2">
         <div>
           <div className="flex justify-between mb-2">
@@ -282,12 +287,42 @@ export default function SportsPronostics() {
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [selectedLeague, setSelectedLeague] = useState<{ id: string; name: string } | null>(null);
 
   const sportUpper = sport.toUpperCase();
 
   const { data: pronostics = [], isLoading } = useQuery<SportPronostic[]>({
     queryKey: ['sports', sport, 'today'],
     queryFn: () => getSportPronosticsToday(sportUpper),
+  });
+
+  const { data: leaguesData } = useQuery<{ date: string; total: number; leagues: League[] }>({
+    queryKey: ['sports', sport, 'leagues'],
+    queryFn: () => getSportLeagues(sportUpper),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  type MatchPrediction = {
+    bsd_prob_home: number; bsd_prob_draw: number; bsd_prob_away: number;
+    bsd_predicted: string;
+    bsd_xg_home: number; bsd_xg_away: number;
+    bsd_prob_over_15: number; bsd_prob_over_25: number; bsd_prob_over_35: number;
+    bsd_prob_btts: number;
+    bsd_confidence: number;
+    bsd_favorite: string; bsd_favorite_prob: number;
+  };
+  type Match = {
+    external_id: string; home_team: string; away_team: string;
+    kickoff: string; status: string; round: string;
+    prediction?: MatchPrediction;
+  };
+  const { data: matchesData, isFetching: matchesFetching } = useQuery<{
+    date: string; league_id: string; league_name: string; matches: Match[];
+  }>({
+    queryKey: ['sports', sport, 'matches', selectedLeague?.id],
+    queryFn: () => getSportMatches(sportUpper, selectedLeague!.id),
+    enabled: !!selectedLeague,
+    staleTime: 5 * 60 * 1000,
   });
 
   const startMutation = useMutation({
@@ -340,27 +375,177 @@ export default function SportsPronostics() {
               {pronostics.length} match(s) aujourd'hui
             </span>
           )}
-          <Button
-            icon={<Play size={14} />}
-            onClick={() => startMutation.mutate(alreadyHasPronostics)}
-            disabled={startMutation.isPending}
-          >
-            {startMutation.isPending ? 'Lancement…' : alreadyHasPronostics ? 'Regénérer' : 'Lancer le pipeline'}
-          </Button>
+          {!alreadyHasPronostics && (
+            <Button
+              icon={<Play size={14} />}
+              onClick={() => startMutation.mutate(false)}
+              disabled={startMutation.isPending}
+            >
+              {startMutation.isPending ? 'Génération…' : 'Générer'}
+            </Button>
+          )}
         </div>
       </div>
+
+      {/* Ligues disponibles aujourd'hui */}
+      {leaguesData && leaguesData.leagues.length > 0 && (
+        <div className="rounded-xl p-4 space-y-4" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--text-faint)' }}>
+              Championnats disponibles aujourd'hui
+            </p>
+            {leaguesData.total > 0 && (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ background: `${ACCENT}20`, color: ACCENT }}>
+                {leaguesData.total} Championnats
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {leaguesData.leagues.map((l: League) => {
+              const isSelected = selectedLeague?.id === l.league_id;
+              return (
+                <button
+                  key={l.league_id}
+                  onClick={() => setSelectedLeague(isSelected ? null : { id: l.league_id, name: l.league_name })}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full font-medium transition-all"
+                  style={{
+                    background: isSelected ? ACCENT : `${ACCENT}15`,
+                    color: isSelected ? '#fff' : ACCENT,
+                    border: `1px solid ${isSelected ? ACCENT : `${ACCENT}30`}`,
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span>{l.league_name}</span>
+                  {l.country && (
+                    <span className="opacity-60 font-normal">{l.country}</span>
+                  )}
+                  <span
+                    className="text-xs font-bold rounded-full px-1.5 py-0.5"
+                    style={{
+                      background: isSelected ? 'rgba(255,255,255,0.25)' : `${ACCENT}30`,
+                      color: isSelected ? '#fff' : ACCENT,
+                    }}
+                  >
+                    {l.match_count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Matchs du championnat sélectionné */}
+          {selectedLeague && (
+            <div className="pt-2" style={{ borderTop: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold" style={{ color: 'var(--text-muted)' }}>
+                  {selectedLeague.name} — matchs du jour
+                </p>
+                <button onClick={() => setSelectedLeague(null)} style={{ color: 'var(--text-faint)' }}>
+                  <X size={14} />
+                </button>
+              </div>
+              {matchesFetching ? (
+                <p className="text-xs" style={{ color: 'var(--text-faint)' }}>Chargement…</p>
+              ) : !matchesData || matchesData.matches.length === 0 ? (
+                <p className="text-xs" style={{ color: 'var(--text-faint)' }}>Aucun match trouvé pour ce championnat.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {matchesData.matches.map((m) => {
+                    const p = m.prediction;
+                    const probH = p ? Math.round(p.bsd_prob_home) : null;
+                    const probD = p ? Math.round(p.bsd_prob_draw) : null;
+                    const probA = p ? Math.round(p.bsd_prob_away) : null;
+                    const predicted = p?.bsd_predicted;
+                    const confidence = p ? Math.round(p.bsd_confidence * 100) : null;
+                    const predictedLabel = predicted === 'H' ? `Victoire ${m.home_team}` : predicted === 'A' ? `Victoire ${m.away_team}` : 'Match nul';
+                    return (
+                      <div
+                        key={m.external_id}
+                        className="rounded-lg p-3 space-y-2.5"
+                        style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+                      >
+                        {/* Heure */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold" style={{ color: ACCENT }}>{m.kickoff}</span>
+                          {m.round && <span className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{m.round}</span>}
+                        </div>
+
+                        {/* Équipes */}
+                        <div className="text-center">
+                          <p className="text-xs font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+                            {m.home_team} <span style={{ color: 'var(--text-faint)' }}>vs</span> {m.away_team}
+                          </p>
+                        </div>
+
+                        {p && (
+                          <>
+                            {/* Pronostic principal */}
+                            <div className="rounded-md px-3 py-2 text-center"
+                              style={{ background: `${ACCENT}15`, border: `1px solid ${ACCENT}30` }}>
+                              <p className="text-xs font-bold" style={{ color: ACCENT }}>{predictedLabel}</p>
+                              <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-faint)' }}>
+                                Probabilité {predicted === 'H' ? probH : predicted === 'A' ? probA : probD}%
+                                {confidence !== null && ` · Confiance ${confidence}%`}
+                              </p>
+                            </div>
+
+                            {/* Chances des 3 issues en texte */}
+                            <div className="grid grid-cols-3 gap-1 text-center">
+                              {([
+                                { label: m.home_team.split(' ')[0], sublabel: 'gagne', prob: probH!, active: predicted === 'H', color: '#10B981' },
+                                { label: 'Match', sublabel: 'nul',   prob: probD!, active: predicted === 'D', color: '#6B7280' },
+                                { label: m.away_team.split(' ')[0], sublabel: 'gagne', prob: probA!, active: predicted === 'A', color: '#3B82F6' },
+                              ]).map(({ label, sublabel, prob, active, color }) => (
+                                <div key={label} className="rounded px-1 py-1.5"
+                                  style={{ background: active ? `${color}20` : 'transparent', border: `1px solid ${active ? color : 'var(--border)'}` }}>
+                                  <p className="text-[10px] font-bold truncate" style={{ color: active ? color : 'var(--text-muted)' }}>{label}</p>
+                                  <p className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{sublabel}</p>
+                                  <p className="text-xs font-bold mt-0.5" style={{ color: active ? color : 'var(--text-muted)' }}>{prob}%</p>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Marchés secondaires */}
+                            <div className="flex flex-wrap gap-1 pt-1" style={{ borderTop: '1px solid var(--border)' }}>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--text-faint)', background: 'var(--border)' }}>
+                                Buts attendus : {p.bsd_xg_home.toFixed(1)} – {p.bsd_xg_away.toFixed(1)}
+                              </span>
+                              {p.bsd_prob_over_25 >= 55 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{ background: '#F59E0B15', color: '#F59E0B' }}>
+                                  Plus de 2.5 buts ({Math.round(p.bsd_prob_over_25)}%)
+                                </span>
+                              )}
+                              {p.bsd_prob_btts >= 55 && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                  style={{ background: '#8B5CF615', color: '#8B5CF6' }}>
+                                  Les deux marquent ({Math.round(p.bsd_prob_btts)}%)
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Content */}
       {isLoading ? (
         <div className="text-sm" style={{ color: 'var(--text-faint)' }}>Chargement…</div>
-      ) : pronostics.length === 0 ? (
+      ) : pronostics.length === 0 && !(leaguesData && leaguesData.leagues.length > 0) ? (
         <div className="rounded-xl p-10 text-center" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)' }}>
           <Target size={32} className="mx-auto mb-3 opacity-30" style={{ color: ACCENT }} />
           <p className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>
-            Aucun pronostic Football pour aujourd'hui.
+            Aucun match Football disponible pour aujourd'hui.
           </p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-faint)' }}>
-            Lancez le pipeline pour générer les pronostics du jour.
+            Revenez plus tard ou vérifiez la configuration des championnats.
           </p>
         </div>
       ) : (

@@ -48,6 +48,7 @@ export const sendPronostic = (id: number) => api.post(`/pronostics/${id}/send`).
 // Results
 export const getResults = () => api.get('/results').then((r) => r.data);
 export const fetchResults = () => api.post('/results/fetch').then((r) => r.data);
+export const sendResult = (id: number) => api.post(`/results/${id}/send`).then((r) => r.data);
 
 // Subscribers
 export const getSubscribers = (params?: any) => api.get('/subscribers', { params }).then((r) => r.data);
@@ -67,6 +68,9 @@ export const getSmsCampaigns = () => api.get('/sms/campaigns').then((r) => r.dat
 export const createSmsCampaign = (data: any) => api.post('/sms/campaigns', data).then((r) => r.data);
 export const sendSmsCampaign = (id: number) => api.post(`/sms/campaigns/${id}/send`).then((r) => r.data);
 export const getSmsLogs = (params?: any) => api.get('/sms/logs', { params }).then((r) => r.data);
+export const resendSmsLog = (id: number) => api.post(`/sms/logs/${id}/resend`).then((r) => r.data);
+export const sendPronosticToSubscriber = (pronosticId: number, subscriberId: number) =>
+  api.post(`/pronostics/${pronosticId}/send-to/${subscriberId}`).then((r) => r.data);
 
 // SMS — Modèles
 export const getSmsTemplates = () => api.get('/sms/templates').then((r) => r.data);
@@ -93,3 +97,7 @@ export const getSportScrapingJob = (sport: string, jobId: string) =>
   api.get(`/sports/${sport}/scrape/job/${jobId}`).then((r) => r.data);
 export const sendSportPronostic = (sport: string, id: number) =>
   api.post(`/sports/${sport}/${id}/send`).then((r) => r.data);
+export const getSportLeagues = (sport: string, date?: string) =>
+  api.get(`/sports/${sport}/leagues`, { params: date ? { date } : undefined }).then((r) => r.data as { date: string; total: number; leagues: { league_id: string; league_name: string; country: string; match_count: number }[] });
+export const getSportMatches = (sport: string, leagueId: string, date?: string) =>
+  api.get(`/sports/${sport}/matches`, { params: { league_id: leagueId, ...(date ? { date } : {}) } }).then((r) => r.data as { date: string; league_id: string; league_name: string; matches: { external_id: string; home_team: string; away_team: string; kickoff: string; status: string; round: string; prediction?: { bsd_prob_home: number; bsd_prob_draw: number; bsd_prob_away: number; bsd_predicted: string; bsd_xg_home: number; bsd_xg_away: number; bsd_prob_over_15: number; bsd_prob_over_25: number; bsd_prob_over_35: number; bsd_prob_btts: number; bsd_confidence: number; bsd_favorite: string; bsd_favorite_prob: number } }[] });

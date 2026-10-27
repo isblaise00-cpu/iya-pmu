@@ -2,11 +2,12 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Plus, Send, MessageSquare, FileText, Pencil, Trash2, Copy } from 'lucide-react';
+import { Plus, Send, MessageSquare, FileText, Pencil, Trash2, Copy, RotateCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
   getSmsCampaigns, createSmsCampaign, sendSmsCampaign, getSmsLogs,
   getSmsTemplates, createSmsTemplate, updateSmsTemplate, deleteSmsTemplate,
+  resendSmsLog,
 } from '../lib/api';
 import Button from '../components/ui/Button';
 import Badge from '../components/ui/Badge';
@@ -390,6 +391,16 @@ export default function SMS() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const resendMutation = useMutation({
+    mutationFn: resendSmsLog,
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['sms-logs'] });
+      if (data.success) toast.success('SMS renvoyé avec succès');
+      else toast.error(`Échec : ${data.error}`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   const handleUseTemplate = (tpl: any) => {
     setCampaignInit({ message: tpl.message, name: tpl.name });
     setActiveTab('campaigns');
@@ -495,7 +506,7 @@ export default function SMS() {
             <table className="w-full">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Abonné', 'Téléphone', 'Message', 'Statut', 'Campagne', 'Date'].map((h) => (
+                  {['Abonné', 'Téléphone', 'Message', 'Statut', 'Campagne', 'Date', ''].map((h) => (
                     <th key={h} className="px-4 py-3 text-left text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
                       {h}
                     </th>
@@ -540,6 +551,19 @@ export default function SMS() {
                       </td>
                       <td className="px-4 py-3 text-xs" style={{ color: 'var(--text-faint)' }}>
                         {format(new Date(log.sentAt), 'dd/MM HH:mm', { locale: fr })}
+                      </td>
+                      <td className="px-4 py-3">
+                        {log.status === 'FAILED' && (
+                          <button
+                            onClick={() => resendMutation.mutate(log.id)}
+                            disabled={resendMutation.isPending}
+                            className="flex items-center gap-1 text-xs px-2 py-1 rounded"
+                            style={{ color: '#F59E0B', border: '1px solid #F59E0B40', background: '#F59E0B10' }}
+                          >
+                            <RotateCcw size={11} />
+                            Renvoyer
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))
