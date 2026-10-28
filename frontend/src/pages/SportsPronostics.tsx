@@ -492,11 +492,11 @@ export default function SportsPronostics() {
                             {/* Chances des 3 issues en texte */}
                             <div className="grid grid-cols-3 gap-1 text-center">
                               {([
-                                { label: m.home_team.split(' ')[0], sublabel: 'gagne', prob: probH!, active: predicted === 'H', color: '#10B981' },
-                                { label: 'Match', sublabel: 'nul',   prob: probD!, active: predicted === 'D', color: '#6B7280' },
-                                { label: m.away_team.split(' ')[0], sublabel: 'gagne', prob: probA!, active: predicted === 'A', color: '#3B82F6' },
-                              ]).map(({ label, sublabel, prob, active, color }) => (
-                                <div key={label} className="rounded px-1 py-1.5"
+                                { key: 'home', label: m.home_team.split(' ')[0], sublabel: 'gagne', prob: probH!, active: predicted === 'H', color: '#10B981' },
+                                { key: 'draw', label: 'Match', sublabel: 'nul',   prob: probD!, active: predicted === 'D', color: '#6B7280' },
+                                { key: 'away', label: m.away_team.split(' ')[0], sublabel: 'gagne', prob: probA!, active: predicted === 'A', color: '#3B82F6' },
+                              ]).map(({ key, label, sublabel, prob, active, color }) => (
+                                <div key={key} className="rounded px-1 py-1.5"
                                   style={{ background: active ? `${color}20` : 'transparent', border: `1px solid ${active ? color : 'var(--border)'}` }}>
                                   <p className="text-[10px] font-bold truncate" style={{ color: active ? color : 'var(--text-muted)' }}>{label}</p>
                                   <p className="text-[10px]" style={{ color: 'var(--text-faint)' }}>{sublabel}</p>
@@ -507,9 +507,11 @@ export default function SportsPronostics() {
 
                             {/* Marchés secondaires */}
                             <div className="flex flex-wrap gap-1 pt-1" style={{ borderTop: '1px solid var(--border)' }}>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--text-faint)', background: 'var(--border)' }}>
-                                Buts attendus : {p.bsd_xg_home.toFixed(1)} – {p.bsd_xg_away.toFixed(1)}
-                              </span>
+                              {p.bsd_xg_home != null && p.bsd_xg_away != null && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: 'var(--text-faint)', background: 'var(--border)' }}>
+                                  Buts attendus : {p.bsd_xg_home.toFixed(1)} – {p.bsd_xg_away.toFixed(1)}
+                                </span>
+                              )}
                               {p.bsd_prob_over_25 >= 55 && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
                                   style={{ background: '#F59E0B15', color: '#F59E0B' }}>
