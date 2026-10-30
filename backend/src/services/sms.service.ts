@@ -197,6 +197,7 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
 
     // ── Solde abonnement ──────────────────────────────────────────────────────
     case 'SOLDE': {
+      if (!subscriber) return "Vous n'etes pas abonne. Envoyez AIDE pour la liste des commandes.";
       const daysLeft = Math.ceil((subscriber.endDate.getTime() - Date.now()) / 86400000);
       return `Abonnement: ${daysLeft}j restants. Exp: ${format(subscriber.endDate, 'dd/MM/yy', { locale: fr })}`;
     }
@@ -241,22 +242,11 @@ export async function handleIncomingSms(phone: string, body: string) {
   });
 
   let responseMessage: string;
-
-  if (!subscriber) {
-    const setting = await prisma.setting.findUnique({ where: { key: 'sms_unknown' } });
-    responseMessage = setting?.value ?? "Vous n'etes pas abonne. Contactez-nous.";
-  } else if (subscriber.status === 'EXPIRED') {
-    const setting = await prisma.setting.findUnique({ where: { key: 'sms_expired' } });
-    responseMessage = setting?.value ?? 'Votre abonnement est expire. Renouvelez pour continuer.';
-  } else if (subscriber.status === 'SUSPENDED') {
-    responseMessage = 'Votre abonnement est suspendu. Contactez le support.';
-  } else {
-    try {
-      responseMessage = await resolveCommand(command, subscriber);
-    } catch (err: any) {
-      logger.error(`[SMS] Erreur résolution commande "${command}":`, err.message);
-      responseMessage = 'Erreur temporaire. Reessayez dans quelques instants.';
-    }
+  try {
+    responseMessage = await resolveCommand(command, subscriber);
+  } catch (err: any) {
+    logger.error(`[SMS] Erreur résolution commande "${command}": ${err.message}`);
+    responseMessage = 'Erreur temporaire. Reessayez dans quelques instants.';
   }
 
   logger.info(`[SMS IN] ${normalized} → "${raw}" → réponse: ${responseMessage.slice(0, 60)}...`);
