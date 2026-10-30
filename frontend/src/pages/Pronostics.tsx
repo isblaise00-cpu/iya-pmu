@@ -563,9 +563,18 @@ export default function Pronostics() {
               const entryProposals: Proposal[] = Array.isArray(p.proposals) ? p.proposals : [];
               const pronoDuJour = entryProposals.find((x) => x.id === 'prono_du_jour');
               const llm = entryProposals.filter((x) => !x.id.startsWith('hist_'));
-              const consensus: Proposal[] = [];
               const hist = entryProposals.filter((x) => x.id.startsWith('hist_'));
               const hitInfo = calcHits(entryProposals, p.result);
+              const ev = p.result?.arrivalOrder?.length
+                ? pronosticCoverage(entryProposals, p.result.arrivalOrder)
+                : null;
+              const bestCombo = ev?.bestCombinationId
+                ? llm.find((x) => x.id === ev.bestCombinationId) ?? null
+                : null;
+              const bestRank = bestCombo ? llm.indexOf(bestCombo) + 1 : null;
+              const arrival: number[] = ev
+                ? p.result.arrivalOrder.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+                : [];
               const raceType = p.race?.raceType || '';
               const isExpanded = historyExpanded === p.id;
 
@@ -622,65 +631,64 @@ export default function Pronostics() {
                         exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.15 }} className="overflow-hidden">
                         <div className="px-3 pb-3 pt-2 space-y-3" style={{ borderTop: '1px solid var(--border)' }}>
 
-                          {/* Arrivée officielle (priorité si disponible) */}
-                          {p.result?.arrivalOrder && (() => {
-                            const ev = pronosticCoverage(entryProposals, p.result.arrivalOrder);
-                            return (
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <span className="text-[10px] font-semibold uppercase tracking-wide"
-                                    style={{ color: 'var(--text-faint)' }}>
-                                    Arrivée officielle
-                                  </span>
-                                  {ev.arrivalSize > 0 && (
-                                    <span className="text-[10px] px-1.5 py-0.5 rounded"
-                                      style={{ background: '#10B98120', color: '#10B981' }}>
-                                      Meilleure combi : {ev.bestHits}/{ev.arrivalSize}
-                                      {ev.bestHits === ev.arrivalSize ? ' ✓' : ''}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex flex-wrap gap-1.5">
-                                  {ev.horseCoverage.map((h, i) => (
-                                    <span key={h.num}
-                                      className="text-xs tabular-nums font-bold px-2 py-0.5 rounded"
-                                      style={{
-                                        background: h.inBest ? '#10B98120' : 'var(--bg-hover)',
-                                        color: h.inBest ? '#10B981' : 'var(--text-muted)',
-                                        border: `1px solid ${h.inBest ? '#10B981' : 'var(--border)'}`,
-                                      }}>
-                                      {i + 1}. {h.num}{h.inBest ? ' ✓' : ''}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-
-                          {consensus.length > 0 && (
-                            <HistoricalCombinations proposals={consensus} title="Combinaisons en désordre · score /100" result={p.result} />
-                          )}
-                          {/* Sélections IA */}
-                          {llm.length > 0 && (
+                          {/* Arrivée officielle */}
+                          {ev && (
                             <div>
-                              <span className="text-[10px] font-semibold uppercase tracking-wide"
-                                style={{ color: 'var(--text-faint)' }}>
-                                Sélections IA
-                              </span>
-                              <div className="mt-1 space-y-0.5">
-                                {llm.map((prop) => (
-                                  <div key={prop.id} className="flex items-center gap-2 text-[11px]">
-                                    <span className="w-28 shrink-0 truncate font-semibold"
-                                      style={{ color: confidenceColor(proposalScore(prop)) }}>
-                                      {prop.title}
+                              <div className="flex items-center gap-2 mb-1">
+                                <span className="text-[10px] font-semibold uppercase tracking-wide"
+                                  style={{ color: 'var(--text-faint)' }}>
+                                  Arrivée officielle
+                                </span>
+                                {ev.arrivalSize > 0 && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded"
+                                    style={{ background: '#10B98120', color: '#10B981' }}>
+                                    {ev.bestHits}/{ev.arrivalSize} sur meilleure combi
+                                    {ev.bestHits === ev.arrivalSize ? ' ✓' : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {ev.horseCoverage.map((h, i) => (
+                                  <span key={h.num}
+                                    className="text-xs tabular-nums font-bold px-2 py-0.5 rounded"
+                                    style={{
+                                      background: h.inBest ? '#10B98120' : 'var(--bg-hover)',
+                                      color: h.inBest ? '#10B981' : 'var(--text-muted)',
+                                      border: `1px solid ${h.inBest ? '#10B981' : 'var(--border)'}`,
+                                    }}>
+                                    {i + 1}. {h.num}{h.inBest ? ' ✓' : ''}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Meilleure combinaison */}
+                          {ev && bestCombo && bestRank && (
+                            <div className="rounded-md px-3 py-2"
+                              style={{ background: '#10B98108', border: '1px solid #10B98130' }}>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-semibold uppercase tracking-wide"
+                                  style={{ color: '#10B981' }}>
+                                  Meilleure combinaison
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                                  style={{ background: '#10B98120', color: '#10B981' }}>
+                                  #{bestRank}
+                                </span>
+                                <span className="ml-auto text-[10px]" style={{ color: '#10B981' }}>
+                                  {ev.bestHits}/{ev.arrivalSize} ✓
+                                </span>
+                              </div>
+                              <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+                                {bestCombo.nums.map((n, i) => (
+                                  <span key={n} className="flex items-center gap-0.5">
+                                    {i > 0 && <span style={{ color: '#10B98140' }}>·</span>}
+                                    <span className="text-sm tabular-nums font-bold"
+                                      style={{ color: arrival.includes(Number(n)) ? '#10B981' : '#10B98160' }}>
+                                      {n}
                                     </span>
-                                    <span className="tabular-nums font-mono" style={{ color: 'var(--text-muted)' }}>
-                                      {prop.nums.join(' · ')}
-                                    </span>
-                                    <span className="ml-auto tabular-nums shrink-0" style={{ color: 'var(--text-faint)' }}>
-                                      {scoreLabel(prop)}
-                                    </span>
-                                  </div>
+                                  </span>
                                 ))}
                               </div>
                             </div>
@@ -711,13 +719,6 @@ export default function Pronostics() {
                             </div>
                           )}
 
-                          {/* Commentaire */}
-                          {p.commentary && (
-                            <p className="text-[11px] line-clamp-2 pt-2 italic"
-                              style={{ borderTop: '1px solid var(--border)', color: 'var(--text-faint)' }}>
-                              {p.commentary}
-                            </p>
-                          )}
                         </div>
                       </motion.div>
                     )}
