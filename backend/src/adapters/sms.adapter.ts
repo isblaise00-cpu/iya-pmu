@@ -94,11 +94,15 @@ class SmppSmsAdapter implements SmsAdapter {
   private session: any = null;
   private inboundHandler: ((phone: string, body: string) => Promise<any>) | null = null;
 
-  /** Enregistre le handler appelé à la réception d'un SMS entrant (deliver_sm). */
+  /** Enregistre le handler appelé à la réception d'un SMS entrant (deliver_sm).
+   *  Déclenche une connexion immédiate pour que le deliver_sm listener soit actif
+   *  dès le démarrage, sans attendre le premier SMS sortant. */
   onInbound(handler: (phone: string, body: string) => Promise<any>): void {
     this.inboundHandler = handler;
-    logger.info('[SMPP] Handler SMS entrant enregistré.');
-    // Si la session est déjà ouverte, le handler sera utilisé dès la prochaine deliver_sm.
+    logger.info('[SMPP] Handler SMS entrant enregistré — connexion initiale en cours...');
+    this.getSession().catch((err: Error) => {
+      logger.error('[SMPP] Echec connexion initiale:', err.message);
+    });
   }
 
   private connect(): Promise<any> {
