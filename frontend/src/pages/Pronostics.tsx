@@ -285,10 +285,15 @@ function ResultsSection({ result, horses, proposals, onFetch, isFetching, onSend
   onSend: () => void;
   isSending: boolean;
 }) {
-  const pronoDuJour = proposals.find((p) => p.id === 'prono_du_jour');
-  const predictedSet = new Set<number>(pronoDuJour?.nums || []);
-  const arrival: number[] = result?.arrivalOrder || [];
-  const hits = arrival.filter((n) => predictedSet.has(n)).length;
+  const arrival: number[] = result?.arrivalOrder
+    ? result.arrivalOrder.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+    : [];
+  const ev = arrival.length ? pronosticCoverage(proposals, arrival) : null;
+  const llm = proposals.filter((p) => !p.id.startsWith('hist_'));
+  const bestCombo = ev?.bestCombinationId
+    ? llm.find((p) => p.id === ev.bestCombinationId) ?? null
+    : null;
+  const bestRank = bestCombo ? llm.indexOf(bestCombo) + 1 : null;
   const horseName = (n: number) => horses.find((h) => h.num === n)?.nom || '';
 
   return (
@@ -300,13 +305,13 @@ function ResultsSection({ result, horses, proposals, onFetch, isFetching, onSend
           <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
             Arrivée officielle
           </span>
-          {result && (
+          {ev && ev.arrivalSize > 0 && (
             <span className="text-[11px] font-bold px-2 py-0.5 rounded-full tabular-nums"
               style={{
-                background: hits === arrival.length ? '#10B98120' : hits > 0 ? '#F59E0B20' : '#6B728020',
-                color: hits === arrival.length ? '#10B981' : hits > 0 ? '#F59E0B' : '#6B7280',
+                background: ev.bestHits === ev.arrivalSize ? '#10B98120' : ev.bestHits > 0 ? '#F59E0B20' : '#6B728020',
+                color: ev.bestHits === ev.arrivalSize ? '#10B981' : ev.bestHits > 0 ? '#F59E0B' : '#6B7280',
               }}>
-              {hits}/{arrival.length} pronostiqués
+              {ev.bestHits}/{ev.arrivalSize} meilleure combi
             </span>
           )}
         </div>
@@ -329,15 +334,16 @@ function ResultsSection({ result, horses, proposals, onFetch, isFetching, onSend
       </div>
 
       {result ? (
-        <div className="p-4">
+        <div className="p-4 space-y-3">
+          {/* Arrivée — vert = cheval dans la meilleure combinaison */}
           <div className="flex flex-wrap gap-2">
             {arrival.map((n, i) => {
-              const hit = predictedSet.has(n);
+              const inBest = ev?.horseCoverage.find((h) => h.num === n)?.inBest ?? false;
               return (
                 <div key={n} className="flex items-center gap-1.5 px-3 py-2 rounded-lg"
                   style={{
-                    background: hit ? '#10B98115' : 'var(--bg-hover)',
-                    border: `1px solid ${hit ? '#10B981' : 'var(--border)'}`,
+                    background: inBest ? '#10B98115' : 'var(--bg-hover)',
+                    border: `1px solid ${inBest ? '#10B981' : 'var(--border)'}`,
                   }}>
                   <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-faint)' }}>{i + 1}.</span>
                   <span className="text-base font-bold tabular-nums" style={{ color: 'var(--text)' }}>{n}</span>
@@ -346,11 +352,41 @@ function ResultsSection({ result, horses, proposals, onFetch, isFetching, onSend
                       {horseName(n)}
                     </span>
                   )}
-                  {hit && <span className="text-[10px] font-bold" style={{ color: '#10B981' }}>✓</span>}
+                  {inBest && <span className="text-[10px] font-bold" style={{ color: '#10B981' }}>✓</span>}
                 </div>
               );
             })}
           </div>
+
+          {/* Meilleure combinaison */}
+          {ev && bestCombo && bestRank && (
+            <div className="rounded-md px-3 py-2"
+              style={{ background: '#10B98108', border: '1px solid #10B98130' }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: '#10B981' }}>
+                  Meilleure combinaison
+                </span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded"
+                  style={{ background: '#10B98120', color: '#10B981' }}>
+                  #{bestRank}
+                </span>
+                <span className="ml-auto text-[10px]" style={{ color: '#10B981' }}>
+                  {ev.bestHits}/{ev.arrivalSize} ✓
+                </span>
+              </div>
+              <div className="flex items-center gap-1 flex-wrap">
+                {bestCombo.nums.map((n, i) => (
+                  <span key={n} className="flex items-center gap-0.5">
+                    {i > 0 && <span style={{ color: '#10B98140' }}>·</span>}
+                    <span className="text-sm tabular-nums font-bold"
+                      style={{ color: arrival.includes(Number(n)) ? '#10B981' : '#10B98160' }}>
+                      {n}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         <div className="px-4 py-3">
