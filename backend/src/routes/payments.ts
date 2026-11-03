@@ -20,6 +20,7 @@ import { smsAdapter } from '../adapters/sms.adapter';
 import { logger } from '../lib/logger';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { handleIncomingSms } from '../services/sms.service';
 
 const router = Router();
 
@@ -51,14 +52,14 @@ function pick(body: any, ...keys: string[]): string {
   return '';
 }
 
-// ── Webhook principal ─────────────────────────────────────────────────────────
+// ── Webhook principal (POST + GET) ───────────────────────────────────────────
+// ONatel peut envoyer en POST (body JSON) ou en GET (query params)
 
-router.post('/webhook/onatel', async (req: Request, res: Response) => {
-  // Toujours répondre 200 rapidement pour éviter les retries ONatel
+async function handleONatelPaymentWebhook(data: any, res: Response) {
   res.json({ status: 'ok' });
 
   try {
-    const body = req.body;
+    const body = data;
     logger.info('[Webhook ONatel] Notification reçue:', JSON.stringify(body));
 
     // ── 1. Extraction des champs (noms multiples selon la config ONatel) ──────
@@ -192,6 +193,27 @@ router.post('/webhook/onatel', async (req: Request, res: Response) => {
   } catch (err: any) {
     logger.error('[Webhook ONatel] Erreur traitement:', err.message);
   }
+}
+
+// ── POST : paiement confirmé par ONatel ──────────────────────────────────────
+router.post('/webhook/onatel', (req: Request, res: Response) =>
+  handleONatelPaymentWebhook(req.body, res)
+);
+
+// ── GET : commande USSD (*3375#) — équivalent d'un SMS entrant ───────────────
+// Params attendus : msisdn={{msisdn}}&userinput={{userinput}}&sessionid={{sessionId}}
+router.get('/webhook/onatel', async (req: Request, res: Response) => {
+  res.json({ status: 'ok' });
+  const phone     = String(req.query.msisdn     || '').trim();
+  const userinput = String(req.query.userinput  || '').trim();
+  if (!phone || !userinput) {
+    logger.warn('[USSD] Paramètres manquants:', req.query);
+    return;
+  }
+  logger.info(`[USSD] *3375# — msisdn=${phone} userinput=${userinput}`);
+  handleIncomingSms(phone, userinput).catch((err: Error) =>
+    logger.error('[USSD] Erreur traitement:', err.message)
+  );
 });
 
 export default router;
