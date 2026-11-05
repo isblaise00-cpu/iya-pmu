@@ -210,15 +210,15 @@ const W = 20; // largeur fixe = même longueur pour toutes les lignes
 const pad = (s: string) => s.padEnd(W);
 const USSD_MENU = [
   '== IYA PMU - MENU ==',
-  pad('1- Prono du jour'),
-  pad('2- Couple'),
-  pad('3- Combis 1-5'),
-  pad('4- Top 4'),
-  pad('5- Favoris'),
-  pad('6- Eviter'),
-  pad('7- Resultat'),
-  pad('8- Solde'),
-  pad('0- Aide'),
+'1- Prono du jour',
+'2- Couple',
+'3- Combis 1-5',
+'4- Top 4',
+'5- Favoris',
+'6- Eviter',
+'7- Resultat',
+'8- Solde',
+'0- Aide',
 ].join('\n');
 
 const USSD_MAP: Record<string, string> = {
