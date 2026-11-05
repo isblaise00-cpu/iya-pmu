@@ -236,7 +236,7 @@ router.get('/webhook/onatel', async (req: Request, res: Response) => {
 
   // 1er appel : afficher le menu
   if (!userinput) {
-    return res.json({ message: USSD_MENU });
+    return res.type('text/plain').send(USSD_MENU);
   }
 
   // 2e appel : traiter le choix
