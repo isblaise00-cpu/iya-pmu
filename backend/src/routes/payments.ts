@@ -206,16 +206,19 @@ router.post('/webhook/onatel', (req: Request, res: Response) =>
 // 1er appel (userinput vide) → retourne le menu USSD
 // 2e appel (userinput = choix) → mappe vers commande SMS → envoie SMS au client
 
+const W = 20; // largeur fixe = même longueur pour toutes les lignes
+const pad = (s: string) => s.padEnd(W);
 const USSD_MENU = [
-  '1- Prono du jour',
-  '2- Couple',
-  '3- Combis 1-5',
-  '4- Top 4',
-  '5- Favoris',
-  '6- Eviter',
-  '7- Resultat',
-  '8- Solde',
-  '0- Aide',
+  '== IYA PMU - MENU ==',
+  pad('1- Prono du jour'),
+  pad('2- Couple'),
+  pad('3- Combis 1-5'),
+  pad('4- Top 4'),
+  pad('5- Favoris'),
+  pad('6- Eviter'),
+  pad('7- Resultat'),
+  pad('8- Solde'),
+  pad('0- Aide'),
 ].join('\n');
 
 const USSD_MAP: Record<string, string> = {
