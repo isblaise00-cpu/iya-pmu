@@ -200,20 +200,56 @@ router.post('/webhook/onatel', (req: Request, res: Response) =>
   handleONatelPaymentWebhook(req.body, res)
 );
 
-// ── GET : commande USSD (*3375#) — équivalent d'un SMS entrant ───────────────
-// Params attendus : msisdn={{msisdn}}&userinput={{userinput}}&sessionid={{sessionId}}
+// ── GET : USSD *3375# ─────────────────────────────────────────────────────────
+// Params : msisdn={{msisdn}}&userinput={{userinput}}&sessionid={{sessionId}}
+//
+// 1er appel (userinput vide) → retourne le menu USSD
+// 2e appel (userinput = choix) → mappe vers commande SMS → envoie SMS au client
+
+const USSD_MENU = [
+  '1- Prono du jour',
+  '2- Couple',
+  '3- Combis 1-5',
+  '4- Top 4',
+  '5- Favoris',
+  '6- Eviter',
+  '7- Resultat',
+  '8- Solde',
+  '0- Aide',
+].join('\n');
+
+const USSD_MAP: Record<string, string> = {
+  '1': 'P',
+  '2': 'C',
+  '3': 'CB1',
+  '4': 'TOP',
+  '5': 'F',
+  '6': 'CE',
+  '7': 'RESULTAT',
+  '8': 'SOLDE',
+  '0': 'AIDE',
+};
+
 router.get('/webhook/onatel', async (req: Request, res: Response) => {
-  res.json({ status: 'ok' });
-  const phone     = String(req.query.msisdn     || '').trim();
-  const userinput = String(req.query.userinput  || '').trim();
-  if (!phone || !userinput) {
-    logger.warn('[USSD] Paramètres manquants:', req.query);
-    return;
+  const phone     = String(req.query.msisdn    || '').trim();
+  const userinput = String(req.query.userinput || '').trim();
+
+  // 1er appel : afficher le menu
+  if (!userinput) {
+    return res.json({ message: USSD_MENU });
   }
-  logger.info(`[USSD] *3375# — msisdn=${phone} userinput=${userinput}`);
-  handleIncomingSms(phone, userinput).catch((err: Error) =>
-    logger.error('[USSD] Erreur traitement:', err.message)
-  );
+
+  // 2e appel : traiter le choix
+  const command = USSD_MAP[userinput] ?? userinput.toUpperCase();
+  logger.info(`[USSD] *3375# — msisdn=${phone} choix=${userinput} → commande=${command}`);
+
+  res.json({ status: 'ok' });
+
+  if (phone) {
+    handleIncomingSms(phone, command).catch((err: Error) =>
+      logger.error('[USSD] Erreur traitement:', err.message)
+    );
+  }
 });
 
 export default router;
