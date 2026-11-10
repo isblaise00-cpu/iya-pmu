@@ -232,18 +232,18 @@ const USSD_MAP: Record<string, string> = {
 };
 
 router.get('/webhook/onatel', async (req: Request, res: Response) => {
-  logger.info('[USSD] Requête reçue:', JSON.stringify(req.query));
-  const phone     = String(req.query.msisdn    || '').trim();
-  const userinput = String(req.query.userinput || '').trim();
+  logger.info(`[USSD] Requête reçue: ${JSON.stringify(req.query)}`);
+  const phone     = String(req.query.msisdn || '').trim();
+  const ussd      = String(req.query.ussd   || req.query.userinput || '').trim();
 
-  // 1er appel : afficher le menu
-  if (!userinput) {
+  // 1er appel : ussd contient le code (*3375) ou est vide → afficher le menu
+  if (!ussd || ussd.startsWith('*')) {
     return res.type('text/plain').send(USSD_MENU);
   }
 
-  // 2e appel : traiter le choix
-  const command = USSD_MAP[userinput] ?? userinput.toUpperCase();
-  logger.info(`[USSD] *3375# — msisdn=${phone} choix=${userinput} → commande=${command}`);
+  // 2e appel : ussd contient le choix (ex: "1")
+  const command = USSD_MAP[ussd] ?? ussd.toUpperCase();
+  logger.info(`[USSD] *3375# — msisdn=${phone} choix=${ussd} → commande=${command}`);
 
   // Réponse texte brut visible sur l'écran USSD
   res.type('text/plain').send('Demande envoyee.\nVous recevrez un SMS\ndans quelques instants.');
