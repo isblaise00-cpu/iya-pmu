@@ -88,11 +88,17 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
   const ds = format(today, 'dd/MM', { locale: fr });
 
   // Handle COMBI_N dynamically (N = 1..40, 5 combis par page, 200 combis au total)
+  // Si CB1 est demandé sans précision, on tire une page aléatoire pour varier les combis envoyées
   if (command.startsWith('COMBI_')) {
     const prono = await getTodayPronostic();
     if (!prono) return `Aucun prono disponible le ${ds}.`;
     const proposals = ((prono.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
-    const page = parseInt(command.split('_')[1], 10);
+    const totalPages = Math.ceil(proposals.length / 5);
+    let page = parseInt(command.split('_')[1], 10);
+    // CB1 sans précision → page aléatoire parmi celles disponibles
+    if (page === 1 && command === 'COMBI_1') {
+      page = Math.floor(Math.random() * totalPages) + 1;
+    }
     const startIdx = (page - 1) * 5;
     const slice = proposals.slice(startIdx, startIdx + 5);
     if (!slice.length) return `Aucune combinaison disponible pour la page ${page}.`;
@@ -104,13 +110,13 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
 
   switch (command) {
 
-    // ── Prono du jour ─────────────────────────────────────────────────────────
+    // ── Prono du jour — combinaison aléatoire parmi les 200 ──────────────────
     case 'PRONO': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}. Reessayez plus tard.`;
-      const proposals = (prono.proposals as any[]) || [];
-      const main = proposals.find((p: any) => p.id === 'prono_du_jour') || proposals[0];
-      if (!main) return 'Prono non disponible.';
+      const proposals = ((prono.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
+      if (!proposals.length) return 'Prono non disponible.';
+      const main = proposals[Math.floor(Math.random() * proposals.length)];
       return `${header('PRONO', raceType(prono), ds)}\n${(main.nums as number[]).join('-')}`;
     }
 
@@ -159,13 +165,13 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
       return `${header('FAVORIS', raceType(prono), ds)}\n${lines.join('\n')}`;
     }
 
-    // ── Regret : 2e meilleure combinaison ────────────────────────────────────
+    // ── Regret : autre combinaison aléatoire ─────────────────────────────────
     case 'REGRET': {
       const prono = await getTodayPronostic();
       if (!prono) return `Aucun prono disponible le ${ds}.`;
-      const proposals = (prono.proposals as any[]) || [];
-      const regret = proposals[1];
-      if (!regret) return 'Aucune combinaison alternative disponible.';
+      const proposals = ((prono.proposals as any[]) || []).filter((p: any) => !p.id?.startsWith('hist_'));
+      if (proposals.length < 2) return 'Aucune combinaison alternative disponible.';
+      const regret = proposals[Math.floor(Math.random() * proposals.length)];
       return `${header('REGRET', raceType(prono), ds)}\n${(regret.nums as number[]).join('-')}`;
     }
 
