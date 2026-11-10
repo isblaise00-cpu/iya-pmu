@@ -237,16 +237,17 @@ router.get('/webhook/onatel', async (req: Request, res: Response) => {
   const ussd      = String(req.query.ussd   || req.query.userinput || '').trim();
 
   // 1er appel : ussd contient le code (*3375) ou est vide → afficher le menu
+  // "CON " = continue session (ONatel attend la saisie et renvoie un 2ème appel)
   if (!ussd || ussd.startsWith('*')) {
-    return res.type('text/plain').send(USSD_MENU);
+    return res.type('text/plain').send('CON ' + USSD_MENU);
   }
 
   // 2e appel : ussd contient le choix (ex: "1")
   const command = USSD_MAP[ussd] ?? ussd.toUpperCase();
   logger.info(`[USSD] *3375# — msisdn=${phone} choix=${ussd} → commande=${command}`);
 
-  // Réponse texte brut visible sur l'écran USSD
-  res.type('text/plain').send('Demande envoyee.\nVous recevrez un SMS\ndans quelques instants.');
+  // "END " = fin de session (ferme le dialogue USSD)
+  res.type('text/plain').send('END Demande envoyee.\nVous recevrez un SMS\ndans quelques instants.');
 
   if (phone) {
     handleIncomingSms(phone, command).catch((err: Error) =>
