@@ -232,6 +232,7 @@ const USSD_MAP: Record<string, string> = {
 };
 
 router.get('/webhook/onatel', async (req: Request, res: Response) => {
+  logger.info('[USSD] Requête reçue:', JSON.stringify(req.query));
   const phone     = String(req.query.msisdn    || '').trim();
   const userinput = String(req.query.userinput || '').trim();
 
