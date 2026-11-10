@@ -246,8 +246,8 @@ router.get('/webhook/onatel', async (req: Request, res: Response) => {
   const command = USSD_MAP[ussd] ?? ussd.toUpperCase();
   logger.info(`[USSD] *3375# — msisdn=${phone} choix=${ussd} → commande=${command}`);
 
-  // "END " = fin de session (ferme le dialogue USSD)
-  res.type('text/plain').send('END Demande envoyee.\nVous recevrez un SMS\ndans quelques instants.');
+  // Fin de session — pas de préfixe CON donc ONatel ferme le dialogue
+  res.type('text/plain').send('SMS envoye!');
 
   if (phone) {
     handleIncomingSms(phone, command).catch((err: Error) =>
