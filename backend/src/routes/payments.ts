@@ -244,7 +244,8 @@ router.get('/webhook/onatel', async (req: Request, res: Response) => {
   const command = USSD_MAP[userinput] ?? userinput.toUpperCase();
   logger.info(`[USSD] *3375# — msisdn=${phone} choix=${userinput} → commande=${command}`);
 
-  res.json({ status: 'ok' });
+  // Réponse texte brut visible sur l'écran USSD
+  res.type('text/plain').send('Demande envoyee.\nVous recevrez un SMS\ndans quelques instants.');
 
   if (phone) {
     handleIncomingSms(phone, command).catch((err: Error) =>
