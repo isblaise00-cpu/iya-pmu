@@ -234,3 +234,14 @@ model SportResult {
 
   @@map("sport_results")
 }
+
+model Lead {
+  id           Int      @id @default(autoincrement())
+  phone        String   @unique
+  lastCommand  String
+  requestCount Int      @default(1)
+  firstSeenAt  DateTime @default(now())
+  lastSeenAt   DateTime @updatedAt
+
+  @@map("leads")
+}

@@ -37,17 +37,26 @@ router.post('/campaigns/:id/send', async (req: Request, res: Response) => {
     const campaign = await prisma.smsCampaign.findUnique({ where: { id: Number(req.params.id) } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-    const where: any = {};
-    if (campaign.target === 'active') where.status = 'ACTIVE';
+    let phones: string[] = [];
 
-    const subscribers = await prisma.subscriber.findMany({ where });
+    if (campaign.target === 'leads') {
+      // Envoi aux leads (non-abonnés)
+      const leads = await (prisma as any).lead.findMany({ select: { phone: true } });
+      phones = leads.map((l: any) => l.phone);
+    } else {
+      // Envoi aux abonnés (actifs ou tous)
+      const where: any = {};
+      if (campaign.target === 'active') where.status = 'ACTIVE';
+      const subscribers = await prisma.subscriber.findMany({ where, select: { phone: true } });
+      phones = subscribers.map((s) => s.phone);
+    }
 
     const results = await Promise.all(
-      subscribers.map(async (sub) => {
-        const result = await smsAdapter.send({ to: sub.phone, message: campaign.message });
+      phones.map(async (phone) => {
+        const result = await smsAdapter.send({ to: phone, message: campaign.message });
         await prisma.smsLog.create({
           data: {
-            subscriberId: sub.id,
+            subscriberId: null,
             message: campaign.message,
             status: result.success ? 'SENT' : 'FAILED',
             campaignId: campaign.id,
@@ -64,7 +73,7 @@ router.post('/campaigns/:id/send', async (req: Request, res: Response) => {
       data: { status: 'SENT', sentAt: new Date() },
     });
 
-    res.json({ message: 'Campaign sent', total: subscribers.length, sent, failed: subscribers.length - sent });
+    res.json({ message: 'Campaign sent', total: phones.length, sent, failed: phones.length - sent });
   } catch (err) {
     logger.error('POST /sms/campaigns/:id/send error:', err);
     res.status(500).json({ error: 'Internal server error' });

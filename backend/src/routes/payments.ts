@@ -159,6 +159,8 @@ async function handleONatelPaymentWebhook(data: any, res: Response) {
       });
       isNew = true;
       logger.info(`[Webhook ONatel] Nouvel abonné créé — ${phone} → ${plan.name}`);
+      // Supprimer le lead si ce numéro était dans la liste
+      await (prisma as any).lead.deleteMany({ where: { phone } }).catch(() => {});
     }
 
     // ── 6. Enregistrement du paiement ─────────────────────────────────────────

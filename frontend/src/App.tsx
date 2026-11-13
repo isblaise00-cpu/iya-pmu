@@ -12,6 +12,7 @@ import Results from './pages/Results';
 import SettingsPage from './pages/Settings';
 import Users from './pages/Users';
 import SportsPronostics from './pages/SportsPronostics';
+import Leads from './pages/Leads';
 
 export default function App() {
   return (
@@ -30,6 +31,7 @@ export default function App() {
               <Route path="/settings" element={<SettingsPage />} />
               <Route path="/users" element={<Users />} />
               <Route path="/sports/:sport" element={<SportsPronostics />} />
+              <Route path="/leads" element={<Leads />} />
             </Route>
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -247,6 +247,15 @@ export async function handleIncomingSms(phone: string, body: string) {
     include: { plan: true },
   });
 
+  // Si pas abonné actif → enregistrer comme lead
+  if (!subscriber || subscriber.status !== 'ACTIVE') {
+    await prisma.lead.upsert({
+      where: { phone: normalized },
+      update: { lastCommand: raw, requestCount: { increment: 1 }, lastSeenAt: new Date() },
+      create: { phone: normalized, lastCommand: raw, lastSeenAt: new Date() },
+    });
+  }
+
   let responseMessage: string;
   try {
     responseMessage = await resolveCommand(command, subscriber);

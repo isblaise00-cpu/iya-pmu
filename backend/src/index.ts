@@ -21,6 +21,7 @@ import sportsRouter from './routes/sports';
 import { smsAdapter } from './adapters/sms.adapter';
 import { handleIncomingSms } from './services/sms.service';
 import paymentsRouter from './routes/payments';
+import leadsRouter from './routes/leads';
 
 const app = express();
 
@@ -73,6 +74,7 @@ app.use('/api/sms', authenticate, smsRouter);
 app.use('/api/dashboard', authenticate, dashboardRouter);
 app.use('/api/settings', authenticate, settingsRouter);
 app.use('/api/sports', authenticate, sportsRouter);
+app.use('/api/leads', authenticate, leadsRouter);
 
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   logger.error('Unhandled error:', err);
