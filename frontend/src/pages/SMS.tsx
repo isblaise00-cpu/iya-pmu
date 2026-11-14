@@ -179,6 +179,8 @@ function NewCampaignModal({ onClose, initialMessage = '', initialName = '' }: Ne
         <select value={form.target} onChange={(e) => set('target', e.target.value)} className="input">
           <option value="all">Tous les abonnés</option>
           <option value="active">Actifs uniquement</option>
+          <option value="expired">Expirés (à relancer)</option>
+          <option value="leads">Leads (non abonnés)</option>
         </select>
       </div>
       <div className="flex gap-3 pt-2">
@@ -471,7 +473,7 @@ export default function SMS() {
                   </div>
                   <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{c.message}</p>
                   <p className="text-xs mt-0.5" style={{ color: 'var(--text-faint)' }}>
-                    Cible: {c.target === 'all' ? 'Tous' : 'Actifs'} ·
+                    Cible: {{ all: 'Tous', active: 'Actifs', expired: 'Expirés', leads: 'Leads' }[c.target as string] ?? c.target} ·
                     {c.sentAt
                       ? ` Envoyée le ${format(new Date(c.sentAt), 'dd/MM/yyyy HH:mm', { locale: fr })}`
                       : ' Non envoyée'}

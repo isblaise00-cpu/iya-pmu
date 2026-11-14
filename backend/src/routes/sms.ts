@@ -40,13 +40,12 @@ router.post('/campaigns/:id/send', async (req: Request, res: Response) => {
     let phones: string[] = [];
 
     if (campaign.target === 'leads') {
-      // Envoi aux leads (non-abonnés)
       const leads = await (prisma as any).lead.findMany({ select: { phone: true } });
       phones = leads.map((l: any) => l.phone);
     } else {
-      // Envoi aux abonnés (actifs ou tous)
       const where: any = {};
-      if (campaign.target === 'active') where.status = 'ACTIVE';
+      if (campaign.target === 'active')  where.status = 'ACTIVE';
+      if (campaign.target === 'expired') where.status = 'EXPIRED';
       const subscribers = await prisma.subscriber.findMany({ where, select: { phone: true } });
       phones = subscribers.map((s) => s.phone);
     }
