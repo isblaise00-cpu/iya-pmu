@@ -37,25 +37,26 @@ router.post('/campaigns/:id/send', async (req: Request, res: Response) => {
     const campaign = await prisma.smsCampaign.findUnique({ where: { id: Number(req.params.id) } });
     if (!campaign) return res.status(404).json({ error: 'Campaign not found' });
 
-    let phones: string[] = [];
+    // Construit la liste { phone, subscriberId? } selon la cible
+    let recipients: { phone: string; subscriberId: number | null }[] = [];
 
     if (campaign.target === 'leads') {
       const leads = await (prisma as any).lead.findMany({ select: { phone: true } });
-      phones = leads.map((l: any) => l.phone);
+      recipients = leads.map((l: any) => ({ phone: l.phone, subscriberId: null }));
     } else {
       const where: any = {};
       if (campaign.target === 'active')  where.status = 'ACTIVE';
       if (campaign.target === 'expired') where.status = 'EXPIRED';
-      const subscribers = await prisma.subscriber.findMany({ where, select: { phone: true } });
-      phones = subscribers.map((s) => s.phone);
+      const subscribers = await prisma.subscriber.findMany({ where, select: { id: true, phone: true } });
+      recipients = subscribers.map((s) => ({ phone: s.phone, subscriberId: s.id }));
     }
 
     const results = await Promise.all(
-      phones.map(async (phone) => {
+      recipients.map(async ({ phone, subscriberId }) => {
         const result = await smsAdapter.send({ to: phone, message: campaign.message });
         await prisma.smsLog.create({
           data: {
-            subscriberId: null,
+            subscriberId,
             message: campaign.message,
             status: result.success ? 'SENT' : 'FAILED',
             campaignId: campaign.id,
@@ -72,7 +73,7 @@ router.post('/campaigns/:id/send', async (req: Request, res: Response) => {
       data: { status: 'SENT', sentAt: new Date() },
     });
 
-    res.json({ message: 'Campaign sent', total: phones.length, sent, failed: phones.length - sent });
+    res.json({ message: 'Campaign sent', total: recipients.length, sent, failed: recipients.length - sent });
   } catch (err) {
     logger.error('POST /sms/campaigns/:id/send error:', err);
     res.status(500).json({ error: 'Internal server error' });
