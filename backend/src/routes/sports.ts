@@ -17,7 +17,7 @@ function gamblerHeaders() {
 
 const router = Router();
 
-const VALID_SPORTS = ['FOOTBALL'];
+const VALID_SPORTS = ['FOOTBALL', 'BASKETBALL'];
 
 function validateSport(sport: string, res: Response): string | null {
   const s = sport.toUpperCase();
@@ -80,10 +80,33 @@ router.get('/:sport/matches', async (req: Request, res: Response) => {
     const url = gamblerUrl();
     if (!url) return res.status(503).json({ error: 'GAMBLER_API_URL non configurée.' });
     const resolvedDate = date || new Date().toISOString().slice(0, 10);
-    const { data } = await axios.get(
-      `${url}/api/${sport.toLowerCase()}/matches`,
-      { params: { league_id, date: resolvedDate }, headers: gamblerHeaders(), timeout: 15_000 },
-    );
+
+    let data: any;
+
+    if (sport === 'BASKETBALL') {
+      // Le Gambler API basket utilise POST /api/sports/generate
+      const response = await axios.post(
+        `${url}/api/sports/generate`,
+        { sport: 'BASKETBALL', date: resolvedDate, leagues: [league_id] },
+        { headers: { ...gamblerHeaders(), 'Content-Type': 'application/json' }, timeout: 15_000 },
+      );
+      data = response.data;
+      // Normalise events → matches + external_id
+      if (Array.isArray(data.events)) {
+        const matches = data.events.map((e: any) => ({
+          ...e,
+          external_id: `bsk-${e.home_team}-${e.away_team}-${e.kickoff}`,
+        }));
+        return res.json({ ...data, matches, events: undefined });
+      }
+    } else {
+      const response = await axios.get(
+        `${url}/api/${sport.toLowerCase()}/matches`,
+        { params: { league_id, date: resolvedDate }, headers: gamblerHeaders(), timeout: 15_000 },
+      );
+      data = response.data;
+    }
+
     res.json(data);
   } catch (err: any) {
     logger.error(`GET /sports/${req.params.sport}/matches error:`, err.message);
@@ -182,50 +205,33 @@ router.post('/:sport/:id/send', async (req: Request, res: Response) => {
 });
 
 // ── POST /:sport/send-to-phones ──────────────────────────────────────────────
-// Envoie plusieurs pronostics sportifs à une liste de numéros spécifiques.
-// Body: { pronosticIds: number[], phones: string[] }
+// Envoie des pronostics (données match directes) à une liste de numéros.
+// Body: {
+//   matches: { home, away, league, kickoff, market, confidence }[],
+//   phones: string[]
+// }
 router.post('/:sport/send-to-phones', async (req: Request, res: Response) => {
   const sport = validateSport(req.params.sport, res);
   if (!sport) return;
 
-  const { pronosticIds, phones } = req.body as { pronosticIds: number[]; phones: string[] };
-  if (!Array.isArray(pronosticIds) || pronosticIds.length === 0)
-    return res.status(400).json({ error: 'pronosticIds requis (tableau non vide)' });
+  const { matches, phones } = req.body as {
+    matches: { home: string; away: string; league: string; kickoff: string; market: string; confidence: number }[];
+    phones: string[];
+  };
+  if (!Array.isArray(matches) || matches.length === 0)
+    return res.status(400).json({ error: 'matches requis (tableau non vide)' });
   if (!Array.isArray(phones) || phones.length === 0)
     return res.status(400).json({ error: 'phones requis (tableau non vide)' });
 
   try {
-    const templateKey  = sport === 'FOOTBALL' ? 'sms_default_foot' : 'sms_default_basket';
-    const tplSetting   = await prisma.setting.findUnique({ where: { key: templateKey } });
-    const defaultTpl   = sport === 'FOOTBALL'
-      ? 'Prono FOOT {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%'
-      : 'Prono BASKET {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%';
-    const template = tplSetting?.value ?? defaultTpl;
-
-    const pronostics = await prisma.sportPronostic.findMany({
-      where: { id: { in: pronosticIds } },
-      include: { event: true },
-    });
+    const sportLabel = sport === 'FOOTBALL' ? 'FOOT' : 'BASKET';
+    const today = format(new Date(), 'dd/MM/yyyy', { locale: fr });
 
     let sent = 0;
     let failed = 0;
 
-    for (const prono of pronostics) {
-      const ev          = prono.event as any;
-      const predictions = (prono.predictions as any[]) || [];
-      const top         = predictions[0];
-      const marketLabel = top
-        ? `${top.label} (${Math.round((top.model_prob ?? 0) * 100)}%)`
-        : 'N/A';
-
-      const message = template
-        .replace('{date}',       format(prono.date, 'dd/MM/yyyy', { locale: fr }))
-        .replace('{home}',       ev?.homeTeam  ?? '')
-        .replace('{away}',       ev?.awayTeam  ?? '')
-        .replace('{league}',     ev?.league    ?? '')
-        .replace('{market}',     marketLabel)
-        .replace('{confidence}', String(prono.confidence));
-
+    for (const m of matches) {
+      const message = `IYA PRONO ${sportLabel} ${today}\n• (${m.league}) : ${m.home} vs ${m.away} - ${m.market}`;
       for (const phone of phones) {
         const normalized = phone.startsWith('+') ? phone : '+' + phone;
         const result = await smsAdapter.send({ to: normalized, message });
@@ -233,7 +239,7 @@ router.post('/:sport/send-to-phones', async (req: Request, res: Response) => {
       }
     }
 
-    res.json({ sent, failed, total: pronosticIds.length * phones.length });
+    res.json({ sent, failed, total: matches.length * phones.length });
   } catch (err: any) {
     logger.error(`POST /sports/${req.params.sport}/send-to-phones error:`, err);
     res.status(500).json({ error: err.message });

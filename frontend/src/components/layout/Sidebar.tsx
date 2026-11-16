@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Trophy, Users, CreditCard,
   MessageSquare, BarChart2, Settings, Zap, Sun, Moon, LogOut, ShieldCheck, Shield, Eye,
-  Target, UserSearch
+  Target, UserSearch, Dumbbell
 } from 'lucide-react';
 import { useAuth, UserRole } from '../../contexts/AuthContext';
 
@@ -10,6 +10,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/pronostics', icon: Trophy, label: 'Pronostics' },
   { to: '/sports/football', icon: Target, label: 'Football' },
+  { to: '/sports/basketball', icon: Dumbbell, label: 'Basketball' },
   { to: '/subscribers', icon: Users, label: 'Abonnés' },
   { to: '/leads', icon: UserSearch, label: 'Leads' },
   { to: '/plans', icon: CreditCard, label: 'Forfaits' },
