@@ -123,7 +123,7 @@ export default function Dashboard() {
             Contacts — pronostics réussis
           </h2>
           <span className="text-[10px] ml-auto" style={{ color: 'var(--text-faint)' }}>
-            ≥ 2/3 tiercé · 3/4 quarté · 4/5 quinté
+            combinaison exacte (ordre libre)
           </span>
         </div>
         {chartsLoading ? (
@@ -137,7 +137,7 @@ export default function Dashboard() {
             <table className="w-full text-xs">
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Date', 'Type', 'Score', 'Numéros', 'Contacts'].map((h) => (
+                  {['Date', 'Type', 'Numéros', 'Contacts'].map((h) => (
                     <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-faint)' }}>{h}</th>
                   ))}
                 </tr>
@@ -151,9 +151,6 @@ export default function Dashboard() {
                         style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)' }}>
                         {p.type}
                       </span>
-                    </td>
-                    <td className="px-3 py-2.5 font-bold" style={{ color: '#10B981' }}>
-                      {p.matched}/{p.total}
                     </td>
                     <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text)' }}>
                       {p.nums.join(' – ')}

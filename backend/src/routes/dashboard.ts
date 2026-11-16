@@ -101,7 +101,7 @@ router.get('/charts', async (_req: Request, res: Response) => {
         }
       }
 
-      // Good pronos : scan ALL proposals, find best match (2/3 tiercé, 3/4 quarté, 4/5 quinté)
+      // Good pronos : scan ALL proposals, keep only perfect matches (all nums in official arrival, any order)
       let bestProposal: { predicted: number[]; matched: number } | null = null;
       for (const p of proposals) {
         const predicted: number[] = Array.isArray(p?.nums) ? p.nums : [];
@@ -111,8 +111,8 @@ router.get('/charts', async (_req: Request, res: Response) => {
         if (official.length !== size || new Set(official).size !== size ||
             !official.every((n: number) => Number.isInteger(n) && n > 0)) continue;
         const matched = predicted.filter((n: number) => official.includes(n)).length;
-        const minRequired = size === 3 ? 2 : size === 4 ? 3 : 4;
-        if (matched < minRequired) continue;
+        // Only keep perfect match: all predicted nums found in official arrival
+        if (matched < size) continue;
         if (!bestProposal || matched > bestProposal.matched) {
           bestProposal = { predicted, matched };
         }
