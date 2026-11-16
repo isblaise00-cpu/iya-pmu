@@ -2,6 +2,9 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import { prisma } from '../lib/prisma';
 import { sendSportPronosticToActiveSubscribers } from '../services/sms.service';
+import { smsAdapter } from '../adapters/sms.adapter';
+import { format } from 'date-fns';
+import { fr } from 'date-fns/locale';
 import { logger } from '../lib/logger';
 import { startSportsPipeline, getSportsJob } from '../services/sports-pipeline.service';
 
@@ -174,6 +177,65 @@ router.post('/:sport/:id/send', async (req: Request, res: Response) => {
     res.json({ message: 'Pronostic envoyé', ...result });
   } catch (err: any) {
     logger.error(`POST /sports/${req.params.sport}/${req.params.id}/send error:`, err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── POST /:sport/send-to-phones ──────────────────────────────────────────────
+// Envoie plusieurs pronostics sportifs à une liste de numéros spécifiques.
+// Body: { pronosticIds: number[], phones: string[] }
+router.post('/:sport/send-to-phones', async (req: Request, res: Response) => {
+  const sport = validateSport(req.params.sport, res);
+  if (!sport) return;
+
+  const { pronosticIds, phones } = req.body as { pronosticIds: number[]; phones: string[] };
+  if (!Array.isArray(pronosticIds) || pronosticIds.length === 0)
+    return res.status(400).json({ error: 'pronosticIds requis (tableau non vide)' });
+  if (!Array.isArray(phones) || phones.length === 0)
+    return res.status(400).json({ error: 'phones requis (tableau non vide)' });
+
+  try {
+    const templateKey  = sport === 'FOOTBALL' ? 'sms_default_foot' : 'sms_default_basket';
+    const tplSetting   = await prisma.setting.findUnique({ where: { key: templateKey } });
+    const defaultTpl   = sport === 'FOOTBALL'
+      ? 'Prono FOOT {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%'
+      : 'Prono BASKET {date} - {home} vs {away} ({league}) : {market} | Confiance {confidence}%';
+    const template = tplSetting?.value ?? defaultTpl;
+
+    const pronostics = await prisma.sportPronostic.findMany({
+      where: { id: { in: pronosticIds } },
+      include: { event: true },
+    });
+
+    let sent = 0;
+    let failed = 0;
+
+    for (const prono of pronostics) {
+      const ev          = prono.event as any;
+      const predictions = (prono.predictions as any[]) || [];
+      const top         = predictions[0];
+      const marketLabel = top
+        ? `${top.label} (${Math.round((top.model_prob ?? 0) * 100)}%)`
+        : 'N/A';
+
+      const message = template
+        .replace('{date}',       format(prono.date, 'dd/MM/yyyy', { locale: fr }))
+        .replace('{home}',       ev?.homeTeam  ?? '')
+        .replace('{away}',       ev?.awayTeam  ?? '')
+        .replace('{league}',     ev?.league    ?? '')
+        .replace('{market}',     marketLabel)
+        .replace('{confidence}', String(prono.confidence));
+
+      for (const phone of phones) {
+        const normalized = phone.startsWith('+') ? phone : '+' + phone;
+        const result = await smsAdapter.send({ to: normalized, message });
+        result.success ? sent++ : failed++;
+      }
+    }
+
+    res.json({ sent, failed, total: pronosticIds.length * phones.length });
+  } catch (err: any) {
+    logger.error(`POST /sports/${req.params.sport}/send-to-phones error:`, err);
     res.status(500).json({ error: err.message });
   }
 });
