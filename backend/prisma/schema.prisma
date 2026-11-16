@@ -245,3 +245,11 @@ model Lead {
 
   @@map("leads")
 }
+
+model RequestStat {
+  id    Int      @id @default(autoincrement())
+  date  DateTime @unique
+  count Int      @default(0)
+
+  @@map("request_stats")
+}

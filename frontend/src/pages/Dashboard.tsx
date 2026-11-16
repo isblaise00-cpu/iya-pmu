@@ -1,9 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
-import { Users, UserCheck, UserX, TrendingUp, Trophy, Clock, CheckCircle2 } from 'lucide-react';
+import { Users, UserCheck, UserX, TrendingUp, Activity, Phone, Trophy } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { getDashboardStats, getDashboardCharts, getPronostics, getSubscribers } from '../lib/api';
 import { formatXOF } from '../lib/format';
@@ -30,10 +30,6 @@ export default function Dashboard() {
 
   const recentPronostics = pronostics?.slice(0, 5) || [];
   const recentSubscribers = subscribers?.slice(0, 5) || [];
-  const today = stats?.todayPronostic;
-  const todaySelection = today?.proposals?.find((p: any) => p.id === 'prono_du_jour');
-  const todayScore = todaySelection?.score ?? todaySelection?.confidence;
-  const successRate = charts?.successRate;
 
   return (
     <div className="space-y-4">
@@ -46,7 +42,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
         <StatCard title="Total Abonnés" value={stats?.totalSubscribers ?? '—'} icon={Users} loading={statsLoading} />
         <StatCard title="Actifs" value={stats?.activeSubscribers ?? '—'} icon={UserCheck} loading={statsLoading} />
         <StatCard title="Expirés" value={stats?.expiredSubscribers ?? '—'} icon={UserX} loading={statsLoading} />
@@ -54,6 +50,12 @@ export default function Dashboard() {
           title="Revenus du Mois"
           value={stats ? formatXOF(stats.monthRevenue) : '—'}
           icon={TrendingUp}
+          loading={statsLoading}
+        />
+        <StatCard
+          title="Requêtes ce mois"
+          value={stats?.monthlyRequests ?? '—'}
+          icon={Activity}
           loading={statsLoading}
         />
       </div>
@@ -88,104 +90,96 @@ export default function Dashboard() {
 
         <div className="card p-4">
           <h2 className="text-xs font-semibold mb-3" style={{ color: 'var(--text-muted)' }}>
-            Score des pronostics (30j)
+            Requêtes par jour (30j)
           </h2>
           {chartsLoading ? (
             <div className="skeleton h-32 w-full" />
           ) : (
             <ResponsiveContainer width="100%" height={140}>
-              <LineChart data={charts?.pronosticsConfidence || []} margin={{ top: 4, right: 4, left: -12, bottom: 0 }}>
+              <AreaChart data={charts?.dailyRequests || []} margin={{ top: 4, right: 4, left: -12, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="reqGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fill: 'var(--text-faint)', fontSize: 10 }} tickLine={false} axisLine={false}
                   tickFormatter={(v) => v.slice(5)} interval="preserveStartEnd" />
-                <YAxis domain={[0, 100]} tick={{ fill: 'var(--text-faint)', fontSize: 10 }} tickLine={false} axisLine={false} width={28} />
+                <YAxis tick={{ fill: 'var(--text-faint)', fontSize: 10 }} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
                 <Tooltip content={<ChartTooltip />} cursor={{ stroke: 'var(--border)' }} />
-                <Line type="monotone" dataKey="score" stroke="#F59E0B" strokeWidth={2} dot={false} activeDot={{ r: 3, fill: '#F59E0B' }} />
-              </LineChart>
+                <Area type="monotone" dataKey="count" stroke="#10B981" strokeWidth={2} fill="url(#reqGrad)" />
+              </AreaChart>
             </ResponsiveContainer>
           )}
         </div>
       </div>
 
-      {/* Today's pronostic + success rate + system status */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        <div className="card p-4 lg:col-span-1" style={{ background: 'var(--yellow-dim)', borderColor: 'var(--yellow)' }}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--yellow-text)' }}>
-              <Trophy size={12} /> Pronostic du Jour
-            </span>
-            {today && <Badge status={today.isSent ? 'SENT' : 'DRAFT'} />}
-          </div>
-          {today ? (
-            <>
-              <p className="text-sm font-bold mb-2 leading-snug" style={{ color: 'var(--text)' }}>
-                {todaySelection?.nums?.join(' – ') || 'N/A'}
-              </p>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold" style={{ color: 'var(--yellow-text)' }}>
-                  {todayScore ?? '—'}
-                </span>
-                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>/100</span>
-                <span className="ml-auto text-[11px]" style={{ color: 'var(--text-muted)' }}>{todaySelection?.score !== undefined ? 'score de sélection' : 'ancienne confiance'}</span>
-              </div>
-              <div className="mt-2 w-full h-1 rounded-full" style={{ background: 'rgba(0,0,0,0.08)' }}>
-                <div className="h-1 rounded-full transition-all duration-700"
-                  style={{ width: `${todayScore ?? 0}%`, background: 'var(--yellow)' }} />
-              </div>
-            </>
-          ) : (
-            <p className="text-xs py-3" style={{ color: 'var(--text-muted)' }}>Aucun pronostic généré</p>
-          )}
+      {/* Contacts — pronostics réussis */}
+      <div className="card p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <Trophy size={13} style={{ color: 'var(--yellow)' }} />
+          <h2 className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+            Contacts — pronostics réussis
+          </h2>
+          <span className="text-[10px] ml-auto" style={{ color: 'var(--text-faint)' }}>
+            ≥ 2/3 tiercé · 3/4 quarté · 4/5 quinté
+          </span>
         </div>
-
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
-              <CheckCircle2 size={12} style={{ color: 'var(--yellow)' }} /> Arrivées couvertes (désordre)
-            </span>
-            <span className="text-[11px]" style={{ color: 'var(--text-faint)' }}>30j</span>
+        {chartsLoading ? (
+          <div className="skeleton h-24 w-full" />
+        ) : !charts?.goodPronos?.length ? (
+          <p className="text-xs text-center py-6" style={{ color: 'var(--text-faint)' }}>
+            Aucun pronostic réussi trouvé
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                  {['Date', 'Type', 'Score', 'Numéros', 'Contacts'].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-faint)' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {charts.goodPronos.map((p: any, i: number) => (
+                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td className="px-3 py-2.5 font-medium" style={{ color: 'var(--text-muted)' }}>{p.date}</td>
+                    <td className="px-3 py-2.5">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                        style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)' }}>
+                        {p.type}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 font-bold" style={{ color: '#10B981' }}>
+                      {p.matched}/{p.total}
+                    </td>
+                    <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text)' }}>
+                      {p.nums.join(' – ')}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {p.recipients.length === 0 ? (
+                        <span style={{ color: 'var(--text-faint)' }}>—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {p.recipients.map((r: any) => (
+                            <span key={r.phone}
+                              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
+                              style={{ background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>
+                              <Phone size={9} />
+                              {r.name ? `${r.name} · ` : ''}{r.phone}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          {chartsLoading ? (
-            <div className="skeleton h-12 w-full" />
-          ) : (
-            <>
-              <div className="flex items-baseline gap-1.5 mb-2">
-                <span className="text-2xl font-bold" style={{ color: 'var(--text)' }}>
-                  {successRate?.rate ?? 0}%
-                </span>
-                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {successRate?.success ?? 0}/{successRate?.total ?? 0}
-                </span>
-              </div>
-              <div className="w-full h-1 rounded-full" style={{ background: 'var(--border)' }}>
-                <div className="h-1 rounded-full transition-all duration-700"
-                  style={{ width: `${successRate?.rate ?? 0}%`, background: 'var(--yellow)' }} />
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="card p-4">
-          <div className="flex items-center justify-between mb-2">
-            <span className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide font-semibold" style={{ color: 'var(--text-muted)' }}>
-              <Clock size={12} style={{ color: 'var(--yellow)' }} /> Statut Système
-            </span>
-          </div>
-          <div className="space-y-1.5">
-            {[
-              { label: 'Scraping', time: '07:00' },
-              { label: 'Résultats', time: '18:00' },
-            ].map((item) => (
-              <div key={item.label} className="flex items-center justify-between text-xs">
-                <span style={{ color: 'var(--text)' }}>{item.label}</span>
-                <span className="flex items-center gap-2">
-                  <span className="font-medium" style={{ color: 'var(--text-muted)' }}>{item.time}</span>
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ background: '#10B981' }} />
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Recent tables */}

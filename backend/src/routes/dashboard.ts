@@ -10,7 +10,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-    const [totalSubscribers, activeSubscribers, expiredSubscribers, monthRevenue, todayPronostic] =
+    const [totalSubscribers, activeSubscribers, expiredSubscribers, monthRevenue, todayPronostic, monthlyRequestsAgg] =
       await Promise.all([
         prisma.subscriber.count(),
         prisma.subscriber.count({ where: { status: 'ACTIVE' } }),
@@ -20,6 +20,10 @@ router.get('/stats', async (_req: Request, res: Response) => {
           _sum: { amount: true },
         }),
         prisma.pronostic.findFirst({ orderBy: { date: 'desc' } }),
+        (prisma as any).requestStat.aggregate({
+          where: { date: { gte: startOfMonth } },
+          _sum: { count: true },
+        }),
       ]);
 
     res.json({
@@ -29,6 +33,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
       suspendedSubscribers: totalSubscribers - activeSubscribers - expiredSubscribers,
       monthRevenue: monthRevenue._sum.amount || 0,
       todayPronostic,
+      monthlyRequests: monthlyRequestsAgg._sum.count || 0,
     });
   } catch (err) {
     logger.error('GET /dashboard/stats error:', err);
@@ -52,57 +57,100 @@ router.get('/charts', async (_req: Request, res: Response) => {
       })
     );
 
-    // Pronostics confidence scores (last 30) — extrait depuis proposals[prono_du_jour].confidence
-    const recentPronostics = await prisma.pronostic.findMany({
+    // Requêtes par jour (30 derniers jours)
+    const requestStats = await (prisma as any).requestStat.findMany({
       where: { date: { gte: thirtyDaysAgo } },
       orderBy: { date: 'asc' },
-      select: { date: true, proposals: true, isSent: true },
+    });
+    const dailyRequests = subscriberDays.map((day) => {
+      const dateStr = day.toISOString().slice(0, 10);
+      const stat = requestStats.find((s: any) => s.date.toISOString().slice(0, 10) === dateStr);
+      return { date: dateStr, count: stat?.count ?? 0 };
     });
 
-    // Results vs pronostics for success rate
+    // Results vs pronostics for success rate + good pronos contacts
     const resultsWithPronostics = await prisma.result.findMany({
-      where: { date: { gte: thirtyDaysAgo }, pronosticId: { not: null } },
+      where: { pronosticId: { not: null } },
+      orderBy: { date: 'desc' },
       include: { pronostic: true },
     });
 
-    const successRate = resultsWithPronostics.reduce(
-      (acc, r) => {
-        if (!r.pronostic) return acc;
-        const arr = Array.isArray(r.arrivalOrder) ? (r.arrivalOrder as number[]) : [];
-        const proposals = Array.isArray(r.pronostic.proposals) ? r.pronostic.proposals : [];
-        const pronoDuJour = (proposals as any[]).find((p: any) => p.id === 'prono_du_jour');
-        const predicted: number[] = pronoDuJour?.nums || [];
-        const size = predicted.length;
+    const successRate = { total: 0, success: 0 };
+    const goodPronos: {
+      date: string; nums: number[]; type: string;
+      matched: number; total: number;
+      recipients: { name: string; phone: string }[];
+    }[] = [];
+
+    for (const r of resultsWithPronostics) {
+      if (!r.pronostic) continue;
+      const arr = Array.isArray(r.arrivalOrder) ? (r.arrivalOrder as number[]) : [];
+      const proposals = Array.isArray(r.pronostic.proposals) ? (r.pronostic.proposals as any[]) : [];
+
+      // Success rate — check if any proposal fully covers the official arrival
+      // Use size from first valid proposal for the official slice
+      const firstValid = proposals.find((p: any) => Array.isArray(p?.nums) && p.nums.length >= 3);
+      if (firstValid) {
+        const size = firstValid.nums.length;
         const official = arr.slice(0, size).map(Number);
-        if (size < 3 || official.length !== size || new Set(official).size !== size ||
-            !official.every(n => Number.isInteger(n) && n > 0)) return acc;
-        const consensus = (proposals as any[]).filter(p => p.source === 'consensus_v1');
-        const groups = consensus.length ? consensus : [pronoDuJour];
-        const covered = groups.some(p => Array.isArray(p?.nums) && p.nums.length === size &&
-          new Set(p.nums).size === size && p.nums.every((n: number) => official.includes(n)));
-        acc.total += 1;
-        if (covered) acc.success += 1;
-        return acc;
-      },
-      { total: 0, success: 0 }
-    );
+        if (official.length === size && new Set(official).size === size && official.every((n: number) => n > 0)) {
+          const covered = proposals.some((p: any) => Array.isArray(p?.nums) && p.nums.length === size &&
+            new Set(p.nums).size === size && p.nums.every((n: number) => official.includes(n)));
+          successRate.total += 1;
+          if (covered) successRate.success += 1;
+        }
+      }
+
+      // Good pronos : scan ALL proposals, find best match (2/3 tiercé, 3/4 quarté, 4/5 quinté)
+      let bestProposal: { predicted: number[]; matched: number } | null = null;
+      for (const p of proposals) {
+        const predicted: number[] = Array.isArray(p?.nums) ? p.nums : [];
+        const size = predicted.length;
+        if (size < 3) continue;
+        const official = arr.slice(0, size).map(Number);
+        if (official.length !== size || new Set(official).size !== size ||
+            !official.every((n: number) => Number.isInteger(n) && n > 0)) continue;
+        const matched = predicted.filter((n: number) => official.includes(n)).length;
+        const minRequired = size === 3 ? 2 : size === 4 ? 3 : 4;
+        if (matched < minRequired) continue;
+        if (!bestProposal || matched > bestProposal.matched) {
+          bestProposal = { predicted, matched };
+        }
+      }
+      if (!bestProposal) continue;
+
+      const { predicted, matched } = bestProposal;
+      const size = predicted.length;
+
+      const dateStart = new Date(r.date as Date); dateStart.setHours(0, 0, 0, 0);
+      const dateEnd   = new Date(r.date as Date); dateEnd.setHours(23, 59, 59, 999);
+
+      // Fetch all SMS logs that day for pronostic sends (no campaign), any recipient status
+      const logs = await prisma.smsLog.findMany({
+        where: { sentAt: { gte: dateStart, lte: dateEnd }, campaignId: null },
+        include: { subscriber: { select: { name: true, phone: true } } },
+        distinct: ['subscriberId'],
+      });
+
+      goodPronos.push({
+        date: (r.date as Date).toISOString().slice(0, 10),
+        nums: predicted,
+        type: size === 3 ? 'Tiercé' : size === 4 ? 'Quarté' : 'Quinté',
+        matched,
+        total: size,
+        recipients: logs.map((l) => ({ name: l.subscriber?.name ?? '', phone: l.subscriber?.phone ?? '' })),
+      });
+    }
 
     res.json({
       subscriberGrowth,
-      pronosticsConfidence: recentPronostics.map((p) => {
-        const proposals = Array.isArray(p.proposals) ? p.proposals : [];
-        const pronoDuJour = (proposals as any[]).find((x: any) => x.id === 'prono_du_jour');
-        return {
-          date: (p.date as Date).toISOString().slice(0, 10),
-          score: pronoDuJour?.score ?? pronoDuJour?.confidence ?? null,
-          sent: p.isSent,
-        };
-      }),
+      dailyRequests,
       successRate: {
         total: successRate.total,
         success: successRate.success,
         rate: successRate.total > 0 ? Math.round((successRate.success / successRate.total) * 100) : 0,
       },
+      goodPronos,
     });
   } catch (err) {
     logger.error('GET /dashboard/charts error:', err);

@@ -230,6 +230,16 @@ async function resolveCommand(command: string, subscriber: any): Promise<string>
 // Point d'entrée principal : SMS entrant
 // ──────────────────────────────────────────────────────────────────────────────
 
+async function incrementDailyRequests() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  await (prisma as any).requestStat.upsert({
+    where: { date: today },
+    update: { count: { increment: 1 } },
+    create: { date: today, count: 1 },
+  }).catch(() => {});
+}
+
 export async function handleIncomingSms(phone: string, body: string) {
   const normalized = normalizePhone(phone);
   const raw = body.trim().toUpperCase();
@@ -274,6 +284,7 @@ export async function handleIncomingSms(phone: string, body: string) {
       status: 'SENT',
     },
   });
+  await incrementDailyRequests();
 
   return { handled: true, response: responseMessage };
 }
