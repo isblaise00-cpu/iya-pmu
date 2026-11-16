@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { Users, UserCheck, UserX, TrendingUp, Activity, Phone, Trophy } from 'lucide-react';
+import { useState } from 'react';
+import { Users, UserCheck, UserX, TrendingUp, Activity, Phone, Trophy, ChevronDown, ChevronUp } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import {
@@ -27,6 +28,8 @@ export default function Dashboard() {
   const { data: charts, isLoading: chartsLoading } = useQuery({ queryKey: ['charts'], queryFn: getDashboardCharts });
   const { data: pronostics } = useQuery({ queryKey: ['pronostics'], queryFn: getPronostics });
   const { data: subscribers } = useQuery({ queryKey: ['subscribers'], queryFn: getSubscribers });
+
+  const [showAllGoodPronos, setShowAllGoodPronos] = useState(false);
 
   const recentPronostics = pronostics?.slice(0, 5) || [];
   const recentSubscribers = subscribers?.slice(0, 5) || [];
@@ -133,48 +136,63 @@ export default function Dashboard() {
             Aucun pronostic réussi trouvé
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Date', 'Type', 'Numéros', 'Contacts'].map((h) => (
-                    <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-faint)' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {charts.goodPronos.map((p: any, i: number) => (
-                  <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
-                    <td className="px-3 py-2.5 font-medium" style={{ color: 'var(--text-muted)' }}>{p.date}</td>
-                    <td className="px-3 py-2.5">
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                        style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)' }}>
-                        {p.type}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text)' }}>
-                      {p.nums.join(' – ')}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {p.recipients.length === 0 ? (
-                        <span style={{ color: 'var(--text-faint)' }}>—</span>
-                      ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {p.recipients.map((r: any) => (
-                            <span key={r.phone}
-                              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
-                              style={{ background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>
-                              <Phone size={9} />
-                              {r.name ? `${r.name} · ` : ''}{r.phone}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </td>
+          <div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                    {['Date', 'Type', 'Numéros', 'Contacts'].map((h) => (
+                      <th key={h} className="px-3 py-2 text-left font-medium" style={{ color: 'var(--text-faint)' }}>{h}</th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {(showAllGoodPronos ? charts.goodPronos : charts.goodPronos.slice(0, 3)).map((p: any, i: number) => (
+                    <tr key={i} style={{ borderBottom: '1px solid var(--border)' }}>
+                      <td className="px-3 py-2.5 font-medium" style={{ color: 'var(--text-muted)' }}>{p.date}</td>
+                      <td className="px-3 py-2.5">
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                          style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)' }}>
+                          {p.type}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 font-mono" style={{ color: 'var(--text)' }}>
+                        {p.nums.join(' – ')}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {p.recipients.length === 0 ? (
+                          <span style={{ color: 'var(--text-faint)' }}>—</span>
+                        ) : (
+                          <div className="flex flex-wrap gap-1">
+                            {p.recipients.map((r: any) => (
+                              <span key={r.phone}
+                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px]"
+                                style={{ background: 'var(--bg-hover)', color: 'var(--text-muted)' }}>
+                                <Phone size={9} />
+                                {r.name ? `${r.name} · ` : ''}{r.phone}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {charts.goodPronos.length > 3 && (
+              <button
+                onClick={() => setShowAllGoodPronos((v) => !v)}
+                className="flex items-center gap-1 mt-2 mx-auto text-[11px] font-medium px-3 py-1 rounded"
+                style={{ color: 'var(--yellow-text)', background: 'var(--yellow-dim)' }}
+              >
+                {showAllGoodPronos ? (
+                  <><ChevronUp size={12} /> Réduire</>
+                ) : (
+                  <><ChevronDown size={12} /> Voir tout ({charts.goodPronos.length})</>
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>
