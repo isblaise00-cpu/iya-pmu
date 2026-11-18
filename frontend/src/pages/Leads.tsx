@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { Search, Trash2, X } from 'lucide-react';
+import { Search, Trash2, X, Upload } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
 import Button from '../components/ui/Button';
@@ -24,8 +24,15 @@ async function deleteLead(id: number) {
   await axios.delete(`${API}/leads/${id}`, { withCredentials: true });
 }
 
+async function importLeads(phones: string[]) {
+  const { data } = await axios.post(`${API}/leads/import`, { phones }, { withCredentials: true });
+  return data as { imported: number; skipped: number };
+}
+
 export default function Leads() {
   const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
   const [page, setPage]         = useState(1);
   const [search, setSearch]     = useState('');
   const [dateFrom, setDateFrom] = useState('');
@@ -46,6 +53,28 @@ export default function Leads() {
     onError: () => toast.error('Erreur lors de la suppression'),
   });
 
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = '';
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const phones = text
+        .split(/[\r\n,;]+/)
+        .map((l) => l.trim().replace(/^["']|["']$/g, ''))
+        .filter(Boolean);
+      if (phones.length === 0) { toast.error('Aucun numéro trouvé dans le fichier'); return; }
+      const { imported, skipped } = await importLeads(phones);
+      toast.success(`${imported} numéro(s) importé(s)${skipped ? ` · ${skipped} ignoré(s)` : ''}`);
+      qc.invalidateQueries({ queryKey: ['leads'] });
+    } catch {
+      toast.error('Erreur lors de l\'import');
+    } finally {
+      setImporting(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* En-tête */}
@@ -53,6 +82,23 @@ export default function Leads() {
         <div>
           <h1 className="text-2xl font-bold" style={{ color: 'var(--text)' }}>Leads</h1>
           <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>{total} numéro(s) non abonné(s)</p>
+        </div>
+        <div>
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,text/csv,text/plain"
+            className="hidden"
+            onChange={handleCsvFile}
+          />
+          <Button
+            variant="secondary"
+            onClick={() => fileRef.current?.click()}
+            disabled={importing}
+          >
+            <Upload size={14} className="mr-1.5" />
+            {importing ? 'Import...' : 'Importer CSV'}
+          </Button>
         </div>
       </div>
 
@@ -144,7 +190,14 @@ export default function Leads() {
                       {format(new Date(lead.firstSeenAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
                     </td>
                     <td className="px-4 py-3 text-sm" style={{ color: 'var(--text-muted)' }}>
-                      {format(new Date(lead.lastSeenAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
+                      {lead.lastCommand === 'IMPORTÉ' ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                          style={{ background: 'var(--yellow-dim)', color: 'var(--yellow-text)' }}>
+                          Importé
+                        </span>
+                      ) : (
+                        format(new Date(lead.lastSeenAt), 'dd/MM/yyyy HH:mm', { locale: fr })
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <button

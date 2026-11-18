@@ -38,6 +38,44 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
+// POST /api/leads/import — import CSV (tableau de numéros)
+router.post('/import', async (req: Request, res: Response) => {
+  try {
+    const { phones } = req.body as { phones: string[] };
+    if (!Array.isArray(phones) || phones.length === 0)
+      return res.status(400).json({ error: 'phones requis (tableau non vide)' });
+
+    let imported = 0;
+    let skipped  = 0;
+
+    for (const raw of phones) {
+      const phone = raw.trim();
+      if (!phone) { skipped++; continue; }
+
+      const normalized = phone.startsWith('+') ? phone : '+' + phone;
+
+      try {
+        await (prisma as any).lead.upsert({
+          where: { phone: normalized },
+          update: {},            // ne pas écraser un lead existant
+          create: {
+            phone:        normalized,
+            lastCommand:  'IMPORTÉ',
+            requestCount: 0,
+          },
+        });
+        imported++;
+      } catch {
+        skipped++;
+      }
+    }
+
+    res.json({ imported, skipped });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // DELETE /api/leads/:id — suppression manuelle
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
