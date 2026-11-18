@@ -125,12 +125,26 @@ router.get('/charts', async (_req: Request, res: Response) => {
       const dateStart = new Date(r.date as Date); dateStart.setHours(0, 0, 0, 0);
       const dateEnd   = new Date(r.date as Date); dateEnd.setHours(23, 59, 59, 999);
 
-      // Fetch all SMS logs that day for pronostic sends (no campaign), any recipient status
+      // Fetch SMS logs that day (pronostic sends, not campaigns)
       const logs = await prisma.smsLog.findMany({
         where: { sentAt: { gte: dateStart, lte: dateEnd }, campaignId: null },
         include: { subscriber: { select: { name: true, phone: true } } },
-        distinct: ['subscriberId'],
       });
+
+      // Keep only logs whose message contains ALL winning numbers (round-robin: each subscriber got one combo)
+      const matchingLogs = logs.filter((l) =>
+        predicted.every((n: number) => new RegExp(`\\b${n}\\b`).test(l.message))
+      );
+
+      // Deduplicate by subscriberId (or by message if subscriberId is null)
+      const seen = new Set<string>();
+      const recipients: { name: string; phone: string }[] = [];
+      for (const l of matchingLogs) {
+        const key = l.subscriberId ? `id:${l.subscriberId}` : `ph:${l.subscriber?.phone ?? l.message.slice(0, 20)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        recipients.push({ name: l.subscriber?.name ?? '', phone: l.subscriber?.phone ?? '' });
+      }
 
       goodPronos.push({
         date: (r.date as Date).toISOString().slice(0, 10),
@@ -138,7 +152,7 @@ router.get('/charts', async (_req: Request, res: Response) => {
         type: size === 3 ? 'Tiercé' : size === 4 ? 'Quarté' : 'Quinté',
         matched,
         total: size,
-        recipients: logs.map((l) => ({ name: l.subscriber?.name ?? '', phone: l.subscriber?.phone ?? '' })),
+        recipients,
       });
     }
 
