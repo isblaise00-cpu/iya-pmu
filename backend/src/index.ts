@@ -22,6 +22,7 @@ import { smsAdapter } from './adapters/sms.adapter';
 import { handleIncomingSms } from './services/sms.service';
 import paymentsRouter from './routes/payments';
 import leadsRouter from './routes/leads';
+import ussdRouter from './routes/ussd';
 
 const app = express();
 
@@ -43,6 +44,11 @@ app.use('/api/auth', authRouter);
 // ── Webhook paiement ONatel — public ─────────────────────────────────────────
 // URL à transmettre à ONatel : POST https://[domaine]/api/payments/webhook/onatel
 app.use('/api/payments', paymentsRouter);
+
+// ── Webhook USSD public — ONatel envoie sans token ───────────────────────────
+// URL à configurer chez ONatel pour le service 3375# : POST https://votre-domaine.com/api/ussd/webhook
+// Champs attendus : msisdn/from + input/text + type/requestType + sessionId
+app.use('/api/ussd', ussdRouter);
 
 // ── Webhook SMS public — ONatel envoie sans token ─────────────────────────────
 // URL à configurer chez ONatel : POST https://votre-domaine.com/api/sms/webhook
