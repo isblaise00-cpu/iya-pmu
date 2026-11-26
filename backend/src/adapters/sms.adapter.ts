@@ -139,7 +139,16 @@ class SmppSmsAdapter implements SmsAdapter {
             const sourceAddr = String(dpdu.source_addr || '');
             const phone = sourceAddr.startsWith('+') ? sourceAddr : '+' + sourceAddr;
             const raw = dpdu.short_message;
-            const body: string = typeof raw === 'string' ? raw : (raw?.message ?? '');
+            let body: string;
+            if (typeof raw === 'string') {
+              body = raw;
+            } else if (Buffer.isBuffer(raw)) {
+              body = raw.toString('utf8');
+            } else if (raw?.message != null) {
+              body = Buffer.isBuffer(raw.message) ? raw.message.toString('utf8') : String(raw.message);
+            } else {
+              body = '';
+            }
 
             // Double sécurité : format texte typique des delivery reports ("id:XXXX sub:001 dlvrd:...")
             if (/^id:[0-9A-Za-z]/i.test(body.trim())) {
